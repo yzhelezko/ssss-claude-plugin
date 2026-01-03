@@ -1,0 +1,23 @@
+{
+  "name": "ssss",
+  "description": "Stupid Simple Semantic Search - AI-powered code search using local Ollama embeddings with usage tracking and call graph analysis",
+  "version": "1.0.0",
+  "author": {
+    "name": "yzhelezko"
+  },
+  "homepage": "https://github.com/yzhelezko/ssss-claude-plugin",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yzhelezko/ssss-claude-plugin.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "semantic-search",
+    "code-search",
+    "embeddings",
+    "ollama",
+    "mcp",
+    "code-analysis",
+    "call-graph"
+  ]
+}

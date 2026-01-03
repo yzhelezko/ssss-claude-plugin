@@ -1,0 +1,19 @@
+{
+  "ssss": {
+    "command": "${SSSS_BIN_PATH:-ssss}",
+    "args": [],
+    "env": {
+      "MCP_DB_PATH": "${MCP_DB_PATH:-~/.ssss-claude-plugin/data}",
+      "MCP_OLLAMA_URL": "${MCP_OLLAMA_URL:-http://localhost:11434}",
+      "MCP_EMBEDDING_MODEL": "${MCP_EMBEDDING_MODEL:-qwen3-embedding:8b}",
+      "MCP_WEBUI_ENABLED": "${MCP_WEBUI_ENABLED:-true}",
+      "MCP_WEBUI_PORT": "${MCP_WEBUI_PORT:-9420}",
+      "MCP_AUTO_OPEN_UI": "${MCP_AUTO_OPEN_UI:-true}",
+      "MCP_AUTO_INDEX": "${MCP_AUTO_INDEX:-true}",
+      "MCP_WATCH_ENABLED": "${MCP_WATCH_ENABLED:-true}",
+      "MCP_EMBEDDING_WORKERS": "${MCP_EMBEDDING_WORKERS:-4}",
+      "MCP_MAX_FILE_SIZE": "${MCP_MAX_FILE_SIZE:-1048576}",
+      "MCP_DEBOUNCE_MS": "${MCP_DEBOUNCE_MS:-500}"
+    }
+  }
+}

@@ -1,0 +1,172 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          # Linux
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+            ext: ''
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+            ext: ''
+          # macOS
+          - os: darwin
+            arch: amd64
+            runner: macos-latest
+            ext: ''
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+            ext: ''
+          # Windows
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+            ext: '.exe'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build binary
+        shell: bash
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 1
+        run: |
+          # Install cross-compilation tools if needed
+          if [ "${{ matrix.os }}" == "linux" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            sudo apt-get update
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+            export CC=aarch64-linux-gnu-gcc
+          fi
+
+          go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.version }}" \
+            -o ssss-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssss-${{ matrix.os }}-${{ matrix.arch }}
+          path: ssss-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          # Create archives for each platform
+          for dir in artifacts/*/; do
+            name=$(basename "$dir")
+            if [[ "$name" == *"windows"* ]]; then
+              cd "$dir"
+              zip "../../release/${name}.zip" *
+              cd ../..
+            else
+              cd "$dir"
+              chmod +x *
+              tar -czvf "../../release/${name}.tar.gz" *
+              cd ../..
+            fi
+          done
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: SSSS ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            release/*
+          body: |
+            ## SSSS - Stupid Simple Semantic Search
+
+            ### Installation
+
+            **Quick Install (recommended):**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/yzhelezko/ssss-claude-plugin/main/scripts/install.sh | bash
+            ```
+
+            **Manual Installation:**
+            1. Download the appropriate archive for your platform
+            2. Extract the binary to a directory in your PATH
+            3. Ensure Ollama is running with an embedding model
+
+            ### Platforms
+            - Linux (amd64, arm64)
+            - macOS (amd64, arm64)
+            - Windows (amd64)
+
+            ### Requirements
+            - [Ollama](https://ollama.ai) with `qwen3-embedding:8b` model (or configure alternative)
+
+            ### Checksums
+            See `checksums.txt` for SHA256 verification.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
