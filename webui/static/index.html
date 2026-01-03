@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Semantic Search</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #111;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #333;
+        }
+
+        h1 { font-size: 20px; font-weight: 600; color: #fff; }
+
+        .header-info {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .badge.green { background: #1a3d1a; color: #4ade80; }
+        .badge.red { background: #3d1a1a; color: #f87171; }
+        .badge.gray { background: #2a2a2a; color: #888; }
+        .badge.blue { background: #1a2d4d; color: #60a5fa; }
+        .badge.yellow { background: #3d3a1a; color: #fbbf24; }
+
+        .watcher-activity {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: #1a2d4d;
+            border-radius: 12px;
+            font-size: 12px;
+            color: #60a5fa;
+        }
+
+        .watcher-activity.active { display: flex; }
+
+        .watcher-spinner {
+            width: 10px;
+            height: 10px;
+            border: 2px solid #1a2d4d;
+            border-top-color: #60a5fa;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+
+        .panel {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 8px 12px;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 13px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .btn-blue { background: #3b82f6; color: white; }
+        .btn-green { background: #22c55e; color: white; }
+        .btn-gray { background: #333; color: #ccc; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .cwd-info {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #222;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .cwd-info code { color: #888; }
+
+        .scan-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .scan-stat {
+            text-align: center;
+            padding: 10px 6px;
+            background: #222;
+            border-radius: 6px;
+        }
+
+        .scan-stat-val { font-size: 18px; font-weight: 600; color: #fff; }
+        .scan-stat-val.green { color: #4ade80; }
+        .scan-stat-val.yellow { color: #fbbf24; }
+        .scan-stat-lbl { font-size: 10px; color: #666; margin-top: 2px; }
+
+        .progress-area {
+            margin-top: 12px;
+            display: none;
+        }
+
+        .progress-area.active { display: block; }
+
+        .progress-bar-bg {
+            background: #222;
+            border-radius: 4px;
+            height: 20px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            background: #3b82f6;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: white;
+        }
+
+        .progress-text {
+            font-size: 11px;
+            color: #666;
+            margin-top: 6px;
+        }
+
+        /* Search Results */
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .results-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .results-actions .btn {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+
+        .results-list {
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+
+        .result {
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            overflow: hidden;
+        }
+
+        .result:last-child { margin-bottom: 0; }
+
+        .result-row {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            cursor: pointer;
+            background: #1e1e1e;
+            gap: 12px;
+        }
+
+        .result-row:hover { background: #252525; }
+
+        .result-num {
+            font-size: 11px;
+            color: #555;
+            min-width: 20px;
+        }
+
+        .result-path {
+            flex: 1;
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+            font-size: 13px;
+            color: #3b82f6;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-score {
+            font-size: 12px;
+            color: #4ade80;
+            font-weight: 500;
+        }
+
+        .result-row .usage-flag {
+            padding: 2px 6px;
+            font-size: 9px;
+            margin-left: 4px;
+        }
+
+        .result-arrow {
+            color: #444;
+            font-size: 10px;
+            transition: transform 0.2s;
+        }
+
+        .result.open .result-arrow { transform: rotate(90deg); }
+
+        .result-details {
+            display: none;
+            background: #151515;
+            border-top: 1px solid #2a2a2a;
+        }
+
+        .result.open .result-details { display: block; }
+
+        .result-meta {
+            padding: 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .meta-item label {
+            display: block;
+            font-size: 10px;
+            color: #555;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+
+        .meta-item span {
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        .meta-item span.path-full {
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+            font-size: 11px;
+            color: #888;
+            word-break: break-all;
+        }
+
+        .result-code {
+            max-height: 350px;
+            overflow: auto;
+        }
+
+        .result-code pre {
+            margin: 0;
+            padding: 12px;
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #b0b0b0;
+            background: transparent;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* Usage tracking styles */
+        .usage-section {
+            padding: 12px;
+            border-bottom: 1px solid #2a2a2a;
+            background: #181818;
+        }
+
+        .usage-title {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .usage-flags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .usage-flag {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        .flag-unused { background: #3d1a1a; color: #f87171; }
+        .flag-untested { background: #3d3a1a; color: #fbbf24; }
+        .flag-exported { background: #1a3d1a; color: #4ade80; }
+        .flag-test { background: #1a2d4d; color: #60a5fa; }
+        .flag-private { background: #2a2a2a; color: #888; }
+
+        .usage-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 700px) {
+            .usage-grid { grid-template-columns: 1fr; }
+        }
+
+        .usage-box {
+            background: #1e1e1e;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            padding: 10px;
+        }
+
+        .usage-box-title {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .usage-box-title .count {
+            background: #333;
+            padding: 1px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            color: #888;
+        }
+
+        .usage-list {
+            max-height: 180px;
+            overflow-y: auto;
+        }
+
+        .usage-item {
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+            font-size: 11px;
+            padding: 6px 8px;
+            background: #222;
+            border-radius: 3px;
+            margin-bottom: 4px;
+        }
+
+        .usage-item:last-child { margin-bottom: 0; }
+
+        .usage-item-main {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 2px;
+        }
+
+        .usage-item-detail {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 3px;
+        }
+
+        .usage-item .name { color: #3b82f6; font-weight: 500; }
+        .usage-item .file { color: #666; font-size: 10px; }
+        .usage-item .lang {
+            color: #888;
+            font-size: 9px;
+            background: #2a2a2a;
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+
+        .usage-item.test-caller { border-left: 2px solid #60a5fa; }
+        .usage-item.external-call { border-left: 2px solid #888; opacity: 0.7; }
+
+        .external-badge {
+            font-size: 9px;
+            padding: 1px 5px;
+            background: #2a2a2a;
+            color: #888;
+            border-radius: 3px;
+        }
+
+        .test-badge {
+            font-size: 9px;
+            padding: 1px 5px;
+            background: #1a2d4d;
+            color: #60a5fa;
+            border-radius: 3px;
+        }
+
+        .usage-empty {
+            color: #444;
+            font-size: 11px;
+            font-style: italic;
+        }
+
+        .empty-msg {
+            text-align: center;
+            padding: 40px;
+            color: #555;
+            font-size: 13px;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #333;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: white;
+            z-index: 1000;
+            animation: slideUp 0.3s ease;
+        }
+
+        .toast.success { background: #22c55e; }
+        .toast.error { background: #dc2626; }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MCP Semantic Search</h1>
+            <div class="header-info">
+                <div id="watcher-activity" class="watcher-activity">
+                    <span class="watcher-spinner"></span>
+                    <span id="watcher-file">Watching...</span>
+                </div>
+                <span class="badge gray"><strong id="chunk-count">0</strong> chunks</span>
+                <span id="ollama-badge" class="badge red">Ollama</span>
+            </div>
+        </header>
+
+        <div class="grid">
+            <div class="sidebar">
+                <div class="panel">
+                    <div class="panel-title">Index Folder</div>
+
+                    <div id="cwd-box" class="cwd-info" style="display:none;">
+                        <span>CWD: <code id="cwd-path"></code></span>
+                        <button class="btn btn-gray" onclick="useCwd()">Use</button>
+                    </div>
+
+                    <div class="input-row">
+                        <input type="text" id="folder-input" placeholder="Enter folder path...">
+                        <button class="btn btn-gray" onclick="scanFolder()">Scan</button>
+                        <button class="btn btn-green" id="index-btn" onclick="indexFolder()" disabled>Index</button>
+                    </div>
+
+                    <div id="scan-box" style="display:none;">
+                        <div class="scan-stats">
+                            <div class="scan-stat">
+                                <div class="scan-stat-val" id="s-total">0</div>
+                                <div class="scan-stat-lbl">Total</div>
+                            </div>
+                            <div class="scan-stat">
+                                <div class="scan-stat-val green" id="s-new">0</div>
+                                <div class="scan-stat-lbl">New</div>
+                            </div>
+                            <div class="scan-stat">
+                                <div class="scan-stat-val yellow" id="s-mod">0</div>
+                                <div class="scan-stat-lbl">Modified</div>
+                            </div>
+                            <div class="scan-stat">
+                                <div class="scan-stat-val" id="s-same">0</div>
+                                <div class="scan-stat-lbl">Unchanged</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="progress-box" class="progress-area">
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="prog-bar">0%</div>
+                        </div>
+                        <div class="progress-text" id="prog-text"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="main">
+                <div class="panel">
+                    <div class="results-header">
+                        <div class="panel-title">Search</div>
+                        <div class="results-actions" id="results-actions" style="display:none;">
+                            <button class="btn btn-gray" onclick="expandAll()">Expand All</button>
+                            <button class="btn btn-gray" onclick="collapseAll()">Collapse All</button>
+                        </div>
+                    </div>
+
+                    <div class="input-row">
+                        <input type="text" id="search-input" placeholder="Search semantically... (e.g. 'error handling function')">
+                        <button class="btn btn-blue" onclick="doSearch()">Search</button>
+                    </div>
+
+                    <div id="results-list" class="results-list">
+                        <div class="empty-msg">Enter a search query to find code</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scannedPath = null;
+
+        // SSE Connection
+        const sse = new EventSource('/api/progress');
+        sse.addEventListener('progress', e => handleProgress(JSON.parse(e.data)));
+
+        let watcherTimeout = null;
+
+        function handleProgress(ev) {
+            const box = document.getElementById('progress-box');
+            const bar = document.getElementById('prog-bar');
+            const txt = document.getElementById('prog-text');
+            const watcherEl = document.getElementById('watcher-activity');
+            const watcherFile = document.getElementById('watcher-file');
+
+            if (ev.type === 'scanning' || ev.type === 'indexing_started') {
+                box.classList.add('active');
+                bar.style.width = '0%';
+                bar.textContent = '';
+                txt.textContent = ev.message;
+            } else if (ev.type === 'embedding') {
+                box.classList.add('active');
+                bar.style.width = ev.percent + '%';
+                bar.textContent = Math.round(ev.percent) + '%';
+                txt.textContent = ev.file || ev.message;
+            } else if (ev.type === 'complete') {
+                bar.style.width = '100%';
+                bar.textContent = '100%';
+                txt.textContent = ev.message;
+                toast(ev.message, 'success');
+                loadStatus();
+                setTimeout(() => {
+                    box.classList.remove('active');
+                    document.getElementById('scan-box').style.display = 'none';
+                    document.getElementById('index-btn').disabled = true;
+                }, 2000);
+            } else if (ev.type === 'error') {
+                txt.textContent = 'Error: ' + ev.error;
+                toast(ev.error, 'error');
+            } else if (ev.type === 'file_update') {
+                // Watcher is re-indexing a file
+                watcherEl.classList.add('active');
+                watcherFile.textContent = 'Re-indexing: ' + ev.file;
+                clearTimeout(watcherTimeout);
+            } else if (ev.type === 'file_update_complete') {
+                // File re-indexed successfully
+                watcherFile.textContent = 'Updated: ' + ev.file;
+                toast('Updated: ' + ev.file, 'success');
+                loadStatus(); // Refresh chunk count
+                watcherTimeout = setTimeout(() => {
+                    watcherEl.classList.remove('active');
+                }, 3000);
+            } else if (ev.type === 'file_update_error') {
+                watcherFile.textContent = 'Error: ' + ev.file;
+                toast('Failed to update: ' + ev.file, 'error');
+                watcherTimeout = setTimeout(() => {
+                    watcherEl.classList.remove('active');
+                }, 5000);
+            } else if (ev.type === 'file_deleted') {
+                // File removed from index
+                watcherEl.classList.add('active');
+                watcherFile.textContent = 'Removed: ' + ev.file;
+                toast('Removed: ' + ev.file, 'success');
+                loadStatus();
+                watcherTimeout = setTimeout(() => {
+                    watcherEl.classList.remove('active');
+                }, 3000);
+            } else if (ev.type === 'folder_deleted') {
+                // Folder removed from index
+                watcherEl.classList.add('active');
+                watcherFile.textContent = ev.message;
+                toast(ev.message, 'success');
+                loadStatus();
+                watcherTimeout = setTimeout(() => {
+                    watcherEl.classList.remove('active');
+                }, 3000);
+            }
+        }
+
+        // Load status
+        async function loadStatus() {
+            try {
+                const r = await fetch('/api/status');
+                const d = await r.json();
+                document.getElementById('chunk-count').textContent = d.total_chunks || 0;
+                const badge = document.getElementById('ollama-badge');
+                badge.className = 'badge ' + (d.ollama_status === 'connected' ? 'green' : 'red');
+                if (d.current_folder) {
+                    document.getElementById('cwd-box').style.display = 'flex';
+                    document.getElementById('cwd-path').textContent = d.current_folder;
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function useCwd() {
+            document.getElementById('folder-input').value = document.getElementById('cwd-path').textContent;
+            scanFolder();
+        }
+
+        async function scanFolder() {
+            const path = document.getElementById('folder-input').value.trim();
+            if (!path) return toast('Enter a folder path', 'error');
+
+            try {
+                const r = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path})
+                });
+                const d = await r.json();
+                if (d.error) return toast(d.error, 'error');
+
+                scannedPath = d.path;
+                document.getElementById('folder-input').value = d.path;
+                document.getElementById('s-total').textContent = d.total_files;
+                document.getElementById('s-new').textContent = d.new_files;
+                document.getElementById('s-mod').textContent = d.modified_files;
+                document.getElementById('s-same').textContent = d.unchanged_files;
+                document.getElementById('scan-box').style.display = 'block';
+                document.getElementById('index-btn').disabled = false;
+            } catch (e) { toast(e.message, 'error'); }
+        }
+
+        async function indexFolder() {
+            const path = document.getElementById('folder-input').value.trim() || scannedPath;
+            if (!path) return toast('Scan a folder first', 'error');
+            document.getElementById('index-btn').disabled = true;
+
+            try {
+                const r = await fetch('/api/index', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path, watch: true})
+                });
+                if (r.ok) toast('Indexing started', 'success');
+                else toast('Failed to start indexing', 'error');
+            } catch (e) { toast(e.message, 'error'); }
+        }
+
+        async function doSearch() {
+            const q = document.getElementById('search-input').value.trim();
+            if (!q) return;
+
+            const list = document.getElementById('results-list');
+            const actions = document.getElementById('results-actions');
+            list.innerHTML = '<div class="empty-msg"><span class="loading-spinner"></span>Searching...</div>';
+            actions.style.display = 'none';
+
+            try {
+                const r = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({query: q, limit: 20})
+                });
+                const d = await r.json();
+
+                if (!d.results || d.results.length === 0) {
+                    list.innerHTML = '<div class="empty-msg">No results found</div>';
+                    return;
+                }
+
+                actions.style.display = 'flex';
+                list.innerHTML = d.results.map((r, i) => `
+                    <div class="result" id="r${i}">
+                        <div class="result-row" onclick="toggle(${i})">
+                            <span class="result-num">${i + 1}</span>
+                            <span class="result-path" title="${esc(r.absolute_path)}">${esc(r.file_path)}:${r.lines}</span>
+                            ${renderRowFlags(r.usage)}
+                            <span class="result-score">${(r.similarity * 100).toFixed(0)}%</span>
+                            <span class="result-arrow">▶</span>
+                        </div>
+                        <div class="result-details">
+                            <div class="result-meta">
+                                <div class="meta-item">
+                                    <label>Match</label>
+                                    <span>${(r.similarity * 100).toFixed(1)}%</span>
+                                </div>
+                                <div class="meta-item">
+                                    <label>Type</label>
+                                    <span>${r.chunk_type}</span>
+                                </div>
+                                <div class="meta-item">
+                                    <label>Name</label>
+                                    <span>${esc(r.name) || '-'}</span>
+                                </div>
+                                <div class="meta-item">
+                                    <label>Language</label>
+                                    <span>${r.language}</span>
+                                </div>
+                                <div class="meta-item" style="grid-column: 1 / -1;">
+                                    <label>Full Path</label>
+                                    <span class="path-full">${esc(r.absolute_path)}</span>
+                                </div>
+                            </div>
+                            ${renderUsageSection(r.usage)}
+                            <div class="result-code">
+                                <pre>${esc(r.content)}</pre>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (e) {
+                list.innerHTML = `<div class="empty-msg">Error: ${e.message}</div>`;
+            }
+        }
+
+        function renderRowFlags(usage) {
+            if (!usage) return '';
+            let flags = [];
+            if (usage.is_unused) flags.push('<span class="usage-flag flag-unused">⚠ Unused</span>');
+            if (usage.not_tested) flags.push('<span class="usage-flag flag-untested">⚡ No Tests</span>');
+            return flags.join('');
+        }
+
+        function renderUsageSection(usage) {
+            if (!usage) return '';
+
+            const hasData = usage.calls?.length || usage.called_by?.length ||
+                           usage.is_exported || usage.is_unused || usage.not_tested || usage.is_test;
+            if (!hasData) return '';
+
+            let flags = [];
+            if (usage.is_unused) flags.push('<span class="usage-flag flag-unused">⚠ Never Called</span>');
+            if (usage.not_tested) flags.push('<span class="usage-flag flag-untested">⚡ Not Tested</span>');
+            if (usage.is_exported) flags.push('<span class="usage-flag flag-exported">✓ Exported</span>');
+            if (usage.is_test) flags.push('<span class="usage-flag flag-test">🧪 Test Code</span>');
+            if (!usage.is_exported && !usage.is_test) flags.push('<span class="usage-flag flag-private">Private</span>');
+
+            const calls = usage.calls || [];
+            const calledBy = usage.called_by || [];
+
+            return `
+                <div class="usage-section">
+                    <div class="usage-title">📊 Usage Analysis</div>
+                    <div class="usage-flags">${flags.join('')}</div>
+                    <div class="usage-grid">
+                        <div class="usage-box">
+                            <div class="usage-box-title">
+                                <span>📤 Calls (outgoing)</span>
+                                <span class="count">${calls.length}</span>
+                            </div>
+                            <div class="usage-list">
+                                ${calls.length ? calls.map(c => `
+                                    <div class="usage-item${c.is_external ? ' external-call' : ''}">
+                                        <div class="usage-item-main">
+                                            <span class="name">${esc(c.name)}</span>
+                                            ${c.is_external ? '<span class="external-badge">external</span>' : ''}
+                                        </div>
+                                        ${c.file_path ? `
+                                            <div class="usage-item-detail">
+                                                <span class="file">${esc(c.file_path)}${c.line ? ':' + c.line : ''}</span>
+                                                ${c.language ? `<span class="lang">${esc(c.language)}</span>` : ''}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `).join('') : '<div class="usage-empty">No outgoing calls detected</div>'}
+                            </div>
+                        </div>
+                        <div class="usage-box">
+                            <div class="usage-box-title">
+                                <span>📥 Called By (incoming)</span>
+                                <span class="count">${calledBy.length}</span>
+                            </div>
+                            <div class="usage-list">
+                                ${calledBy.length ? calledBy.map(c => `
+                                    <div class="usage-item${c.is_test ? ' test-caller' : ''}">
+                                        <div class="usage-item-main">
+                                            <span class="name">${c.parent ? esc(c.parent) + '.' : ''}${esc(c.name)}</span>
+                                            ${c.is_test ? '<span class="test-badge">🧪 test</span>' : ''}
+                                        </div>
+                                        <div class="usage-item-detail">
+                                            <span class="file">${esc(c.file_path || '')}${c.line ? ':' + c.line : ''}</span>
+                                            ${c.language ? `<span class="lang">${esc(c.language)}</span>` : ''}
+                                        </div>
+                                    </div>
+                                `).join('') : '<div class="usage-empty">No callers found</div>'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggle(i) {
+            document.getElementById('r' + i).classList.toggle('open');
+        }
+
+        function expandAll() {
+            document.querySelectorAll('.result').forEach(el => el.classList.add('open'));
+        }
+
+        function collapseAll() {
+            document.querySelectorAll('.result').forEach(el => el.classList.remove('open'));
+        }
+
+        function esc(s) {
+            if (!s) return '';
+            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        function toast(msg, type) {
+            const t = document.createElement('div');
+            t.className = 'toast ' + type;
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStatus();
+            setInterval(loadStatus, 10000);
+            document.getElementById('search-input').addEventListener('keypress', e => {
+                if (e.key === 'Enter') doSearch();
+            });
+            document.getElementById('folder-input').addEventListener('keypress', e => {
+                if (e.key === 'Enter') scanFolder();
+            });
+        });
+    </script>
+</body>
+</html>
