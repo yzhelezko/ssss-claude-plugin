@@ -55,7 +55,7 @@ Use natural language queries like:
 			mcp.Description("Filter by chunk type: 'function', 'class', 'method', or 'all' (default: 'all')."),
 		),
 		mcp.WithBoolean("code_only",
-			mcp.Description("Exclude non-code files like JSON, YAML, Markdown, HTML, CSS (default: false)."),
+			mcp.Description("Exclude non-code files like JSON, YAML, Markdown, HTML, CSS (default: true)."),
 		),
 		mcp.WithNumber("min_similarity",
 			mcp.Description("Minimum similarity score threshold (0.0-1.0). Results below this score are filtered out."),
@@ -76,7 +76,7 @@ Use natural language queries like:
 			Path:      req.GetString("path", ""),
 			Language:  req.GetString("language", ""),
 			ChunkType: req.GetString("type", ""),
-			CodeOnly:  req.GetBool("code_only", true), // Default true: exclude JSON, YAML, MD, etc.
+			CodeOnly:  req.GetBool("code_only", true),
 		}
 
 		// Get min_similarity (0.0-1.0)
