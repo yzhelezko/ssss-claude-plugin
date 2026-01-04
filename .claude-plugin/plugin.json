@@ -16,5 +16,6 @@
     "mcp",
     "code-analysis",
     "call-graph"
-  ]
+  ],
+  "skills": "./skills/"
 }

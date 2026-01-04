@@ -1,31 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "mcp__plugin_serena_serena__list_dir",
-      "Bash(curl:*)",
-      "Bash(go run:*)",
-      "Bash(python -c:*)",
-      "WebSearch",
-      "WebFetch(domain:github.com)",
-      "WebFetch(domain:dev.to)",
-      "WebFetch(domain:navendu.me)",
-      "WebFetch(domain:boyter.org)",
-      "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:mcpgolang.com)",
-      "WebFetch(domain:mcp-go.dev)",
-      "WebFetch(domain:www.bytesizego.com)",
-      "WebFetch(domain:mcpcat.io)",
-      "Bash(go mod tidy:*)",
-      "Bash(go build:*)",
-      "Bash(go get:*)",
-      "mcp__plugin_context7_context7__resolve-library-id",
-      "mcp__plugin_context7_context7__query-docs",
-      "Bash(ls:*)",
-      "Bash(CGO_CFLAGS=\"-Wno-null-character\" go build:*)",
-      "Bash(CGO_CFLAGS=\"-w\" go build:*)",
-      "Bash(cat:*)",
-      "Bash(git -C /c/sync/myrepo/mcp log --oneline -20)"
+      "Bash(CGO_CFLAGS=\"-w\" go build:*)"
     ]
-  },
-  "outputStyle": "Explanatory"
+  }
 }

@@ -21,6 +21,15 @@ func registerSearch(s *server.MCPServer, idx *indexer.Indexer) {
 	tool := mcp.NewTool("search",
 		mcp.WithDescription(`Semantic code search with usage analysis.
 
+IMPORTANT: Use this tool PROACTIVELY whenever you need to:
+- Find code, functions, classes, or patterns in the codebase
+- Understand how code works or is structured
+- Locate implementations, definitions, or usages
+- Analyze dependencies or call relationships
+- Find unused or untested code
+
+DO NOT rely only on grep/glob - this tool understands code semantically and provides richer context including call graphs and usage analysis.
+
 Returns code snippets matching the query semantically, with:
 - File path, line numbers, function/class name, code content
 - Usage map: what functions it calls, what calls it (3 levels deep)

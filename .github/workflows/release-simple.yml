@@ -25,7 +25,7 @@ jobs:
           go-version: '1.23'
       - name: Build
         run: |
-          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w" -o ssss-linux-amd64 .
+          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w -X main.Version=${{ inputs.version }}" -o ssss-linux-amd64 .
       - uses: actions/upload-artifact@v4
         with:
           name: ssss-linux-amd64
@@ -41,7 +41,7 @@ jobs:
           go-version: '1.23'
       - name: Build
         run: |
-          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w" -o ssss-darwin-amd64 .
+          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w -X main.Version=${{ inputs.version }}" -o ssss-darwin-amd64 .
       - uses: actions/upload-artifact@v4
         with:
           name: ssss-darwin-amd64
@@ -57,7 +57,7 @@ jobs:
           go-version: '1.23'
       - name: Build
         run: |
-          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w" -o ssss-darwin-arm64 .
+          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w -X main.Version=${{ inputs.version }}" -o ssss-darwin-arm64 .
       - uses: actions/upload-artifact@v4
         with:
           name: ssss-darwin-arm64
@@ -74,7 +74,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w" -o ssss-windows-amd64.exe .
+          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w -X main.Version=${{ inputs.version }}" -o ssss-windows-amd64.exe .
       - uses: actions/upload-artifact@v4
         with:
           name: ssss-windows-amd64

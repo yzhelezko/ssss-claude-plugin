@@ -35,6 +35,10 @@ type Config struct {
 	ExcludeDirs []string // Directories to always exclude
 	ExcludeExts []string // File extensions to exclude (binary files)
 	IncludeExts []string // If set, only include these extensions
+
+	// Auto-update settings
+	AutoUpdateEnabled bool // Enable automatic update checking
+	AutoUpdateApply   bool // Automatically apply updates (requires restart)
 }
 
 // DefaultConfig returns the default configuration
@@ -100,6 +104,9 @@ func DefaultConfig() *Config {
 		},
 
 		IncludeExts: []string{}, // Empty means include all text files
+
+		AutoUpdateEnabled: true, // Check for updates by default
+		AutoUpdateApply:   true, // Auto-apply updates by default
 	}
 }
 
@@ -169,6 +176,14 @@ func LoadFromEnv() *Config {
 			}
 			cfg.EmbeddingWorkers = workers
 		}
+	}
+
+	if v := os.Getenv("MCP_AUTO_UPDATE"); v != "" {
+		cfg.AutoUpdateEnabled = strings.ToLower(v) == "true" || v == "1"
+	}
+
+	if v := os.Getenv("MCP_AUTO_UPDATE_APPLY"); v != "" {
+		cfg.AutoUpdateApply = strings.ToLower(v) == "true" || v == "1"
 	}
 
 	return cfg

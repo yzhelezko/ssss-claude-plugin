@@ -1,0 +1,50 @@
+---
+name: semantic-search
+description: Use this skill PROACTIVELY whenever you need to find, understand, or analyze code. Works by meaning, not just text matching. Provides call graphs, finds unused/untested code, and shows dependencies. ALWAYS prefer this over grep/glob for any code exploration task.
+---
+
+# Semantic Search Skill
+
+Use the `search` MCP tool to find and analyze code. This is the PRIMARY tool for code exploration.
+
+## ALWAYS Use This When
+
+- Finding functions, classes, patterns, or implementations
+- Understanding code structure or dependencies
+- Locating where something is defined or used
+- Analyzing call relationships (what calls what)
+- Finding unused or untested code
+- Exploring unfamiliar codebases
+
+## Why Prefer Over grep/glob
+
+- Understands code **semantically** (meaning, not just text)
+- Returns **call graph** showing dependencies
+- Flags **unused** code (`is_unused: true`)
+- Flags **untested** code (`not_tested: true`)
+- Shows **exported** status (`is_exported: true`)
+
+## Query Examples
+
+```
+"authentication handler"
+"database connection"
+"error handling"
+"main entry point"
+"HTTP middleware"
+"config parser"
+```
+
+## Response Fields
+
+| Field | Description |
+|-------|-------------|
+| `file_path` | File location |
+| `lines` | Line range (e.g., "28-157") |
+| `name` | Function/class name |
+| `content` | Code snippet |
+| `usage.calls` | Functions this code calls |
+| `usage.called_by` | Functions that call this code |
+| `is_unused` | Never called anywhere |
+| `not_tested` | No test coverage |
+| `is_exported` | Public/exported symbol |

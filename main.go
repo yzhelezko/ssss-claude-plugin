@@ -14,6 +14,7 @@ import (
 	"mcp-semantic-search/indexer"
 	"mcp-semantic-search/store"
 	"mcp-semantic-search/tools"
+	"mcp-semantic-search/updater"
 	"mcp-semantic-search/watcher"
 	"mcp-semantic-search/webui"
 
@@ -21,9 +22,12 @@ import (
 )
 
 const (
-	serverName    = "mcp-semantic-search"
-	serverVersion = "1.0.0"
+	serverName = "mcp-semantic-search"
 )
+
+// Version is set via ldflags at build time:
+// go build -ldflags "-X main.Version=1.2.3"
+var Version = "dev"
 
 func main() {
 	// Load configuration
@@ -77,12 +81,24 @@ func main() {
 	// Create MCP server
 	mcpServer := server.NewMCPServer(
 		serverName,
-		serverVersion,
+		Version,
 		server.WithToolCapabilities(true),
 	)
 
 	// Register all tools
 	tools.RegisterTools(mcpServer, idx)
+
+	// Initialize auto-updater (runs in background)
+	if cfg.AutoUpdateEnabled {
+		appUpdater := updater.NewUpdater(Version, true)
+		if cfg.AutoUpdateApply {
+			// Auto-apply updates in background
+			appUpdater.BackgroundAutoUpdate(context.Background())
+		} else {
+			// Just check and notify
+			appUpdater.BackgroundCheck(context.Background())
+		}
+	}
 
 	// Start Web UI server if enabled
 	var webServer *webui.Server
@@ -118,13 +134,14 @@ func main() {
 	}()
 
 	// Print startup info to stderr (stdout is for MCP communication)
-	fmt.Fprintf(os.Stderr, "Starting %s v%s\n", serverName, serverVersion)
+	fmt.Fprintf(os.Stderr, "Starting %s v%s\n", serverName, Version)
 	fmt.Fprintf(os.Stderr, "Database path: %s\n", cfg.DBPath)
 	fmt.Fprintf(os.Stderr, "Ollama URL: %s\n", cfg.OllamaURL)
 	fmt.Fprintf(os.Stderr, "Embedding model: %s\n", cfg.EmbeddingModel)
 	fmt.Fprintf(os.Stderr, "Embedding workers: %d\n", cfg.EmbeddingWorkers)
 	fmt.Fprintf(os.Stderr, "File watching: %v\n", cfg.WatchEnabled)
 	fmt.Fprintf(os.Stderr, "Auto-index: %v\n", cfg.AutoIndex)
+	fmt.Fprintf(os.Stderr, "Auto-update: %v (apply: %v)\n", cfg.AutoUpdateEnabled, cfg.AutoUpdateApply)
 	if cfg.WebUIEnabled && actualWebUIPort > 0 {
 		fmt.Fprintf(os.Stderr, "Web UI: http://localhost:%d\n", actualWebUIPort)
 		if cfg.AutoOpenUI {

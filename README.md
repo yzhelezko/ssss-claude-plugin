@@ -50,7 +50,7 @@ After installing the binary, install the plugin in Claude Code:
 
 **Step 2: Install the plugin**
 ```
-/plugin install ssss@ssss-marketplace
+/plugin install ssss@yzhelezko
 ```
 
 ### Install as Standalone MCP Server
