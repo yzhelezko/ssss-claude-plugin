@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -263,7 +264,7 @@ func (s *Store) FindCallers(ctx context.Context, symbolName string, maxResults i
 		// Parse line number
 		startLine := 0
 		if lineStr := r.Metadata["start_line"]; lineStr != "" {
-			fmt.Sscanf(lineStr, "%d", &startLine)
+			startLine, _ = strconv.Atoi(lineStr)
 		}
 
 		callers = append(callers, types.CallerInfo{
@@ -297,7 +298,7 @@ func (s *Store) FindSymbolLocation(ctx context.Context, symbolName string) (*typ
 		if name == symbolName || strings.HasSuffix(name, "."+symbolName) {
 			startLine := 0
 			if lineStr := r.Metadata["start_line"]; lineStr != "" {
-				fmt.Sscanf(lineStr, "%d", &startLine)
+				startLine, _ = strconv.Atoi(lineStr)
 			}
 
 			return &types.CallInfo{

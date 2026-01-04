@@ -109,11 +109,11 @@ func main() {
 		<-sigChan
 		log.Println("Shutting down...")
 		if webServer != nil {
-			webServer.Stop()
+			_ = webServer.Stop()
 		}
 		watcherManager.StopAll()
 		idx.Close()
-		vectorStore.Close()
+		_ = vectorStore.Close()
 		os.Exit(0)
 	}()
 

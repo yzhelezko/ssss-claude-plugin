@@ -179,7 +179,9 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css")
 	}
 
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		log.Printf("Failed to write response: %v", err)
+	}
 }
 
 // handleSSE handles Server-Sent Events for real-time progress updates
@@ -440,5 +442,7 @@ func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("Failed to encode JSON response: %v", err)
+	}
 }

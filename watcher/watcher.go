@@ -197,10 +197,13 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 	if event.Has(fsnotify.Create) {
 		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
 			if !w.shouldExcludeDir(info.Name(), event.Name) {
-				w.watcher.Add(event.Name)
-				w.watchedDirsMu.Lock()
-				w.watchedDirs[event.Name] = true
-				w.watchedDirsMu.Unlock()
+				if err := w.watcher.Add(event.Name); err != nil {
+					log.Printf("Failed to watch new directory %s: %v", event.Name, err)
+				} else {
+					w.watchedDirsMu.Lock()
+					w.watchedDirs[event.Name] = true
+					w.watchedDirsMu.Unlock()
+				}
 			}
 			return
 		}
@@ -310,7 +313,7 @@ func (wm *WatcherManager) StartWatching(projectPath string) error {
 
 	// Stop existing watcher if any
 	if w, ok := wm.watchers[projectPath]; ok {
-		w.Stop()
+		_ = w.Stop() // Ignore error when replacing watcher
 	}
 
 	// Create new watcher
@@ -346,7 +349,7 @@ func (wm *WatcherManager) StopAll() {
 	defer wm.mu.Unlock()
 
 	for path, w := range wm.watchers {
-		w.Stop()
+		_ = w.Stop() // Ignore errors during shutdown
 		delete(wm.watchers, path)
 	}
 }

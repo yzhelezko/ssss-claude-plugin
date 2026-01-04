@@ -28,6 +28,9 @@ jobs:
         run: go mod download
 
       - name: Build
+        env:
+          CGO_ENABLED: 1
+          CGO_CFLAGS: "-w"  # Suppress warnings from tree-sitter generated C code
         run: go build -v ./...
 
       - name: Run tests

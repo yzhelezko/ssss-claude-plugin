@@ -1,0 +1,144 @@
+name: Release (Simple)
+
+# Alternative release workflow without ARM runners
+# Use this if ubuntu-24.04-arm is not available on your GitHub plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build
+        run: |
+          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w" -o ssss-linux-amd64 .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ssss-linux-amd64
+          path: ssss-linux-amd64
+
+  build-macos-intel:
+    name: Build macOS Intel
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build
+        run: |
+          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w" -o ssss-darwin-amd64 .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ssss-darwin-amd64
+          path: ssss-darwin-amd64
+
+  build-macos-arm:
+    name: Build macOS ARM
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build
+        run: |
+          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w" -o ssss-darwin-arm64 .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ssss-darwin-arm64
+          path: ssss-darwin-arm64
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build
+        shell: bash
+        run: |
+          CGO_ENABLED=1 CGO_CFLAGS="-w" go build -ldflags="-s -w" -o ssss-windows-amd64.exe .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ssss-windows-amd64
+          path: ssss-windows-amd64.exe
+
+  release:
+    name: Create Release
+    needs: [build-linux, build-macos-intel, build-macos-arm, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+
+          # Linux
+          cd artifacts/ssss-linux-amd64 && chmod +x ssss-linux-amd64
+          tar -czvf ../../release/ssss-linux-amd64.tar.gz ssss-linux-amd64 && cd ../..
+
+          # macOS Intel
+          cd artifacts/ssss-darwin-amd64 && chmod +x ssss-darwin-amd64
+          tar -czvf ../../release/ssss-darwin-amd64.tar.gz ssss-darwin-amd64 && cd ../..
+
+          # macOS ARM
+          cd artifacts/ssss-darwin-arm64 && chmod +x ssss-darwin-arm64
+          tar -czvf ../../release/ssss-darwin-arm64.tar.gz ssss-darwin-arm64 && cd ../..
+
+          # Windows
+          cd artifacts/ssss-windows-amd64 && zip ../../release/ssss-windows-amd64.zip ssss-windows-amd64.exe && cd ../..
+
+          # Checksums
+          cd release && sha256sum * > checksums.txt && cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.version }}
+          name: SSSS ${{ inputs.version }}
+          files: release/*
+          body: |
+            ## SSSS - Stupid Simple Semantic Search
+
+            ### Quick Install
+
+            **Linux/macOS:**
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/yzhelezko/ssss-claude-plugin/main/scripts/install.sh | bash
+            ```
+
+            **Windows (PowerShell):**
+            ```powershell
+            irm https://raw.githubusercontent.com/yzhelezko/ssss-claude-plugin/main/scripts/install.ps1 | iex
+            ```
+
+            ### Requirements
+            - [Ollama](https://ollama.ai) with embedding model
+
+            ### Checksums
+            See `checksums.txt` for SHA256 verification.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

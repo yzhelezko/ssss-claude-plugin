@@ -34,7 +34,6 @@ type Indexer struct {
 	embedder       *Embedder
 	chunker        *Chunker
 	watcherMgr     *watcher.WatcherManager
-	mu             sync.RWMutex
 	indexingMu     sync.Mutex // Prevent concurrent indexing of same folder
 	progressCb     ProgressCallback
 	progressCbLock sync.RWMutex
@@ -706,7 +705,9 @@ func (idx *Indexer) DeleteFile(ctx context.Context, filePath string) error {
 	for _, folder := range folders {
 		if hasPrefix(absFilePath, folder) {
 			idx.hashStore.RemoveFileHash(folder, absFilePath)
-			idx.hashStore.SaveProjectHashes(folder)
+			if err := idx.hashStore.SaveProjectHashes(folder); err != nil {
+				log.Printf("Warning: failed to save project hashes: %v", err)
+			}
 
 			relPath, _ := filepath.Rel(folder, absFilePath)
 			idx.sendProgress(types.ProgressEvent{
@@ -752,7 +753,9 @@ func (idx *Indexer) DeleteFolder(ctx context.Context, folderPath string) error {
 				}
 			}
 			// Save updated hashes
-			idx.hashStore.SaveProjectHashes(folder)
+			if err := idx.hashStore.SaveProjectHashes(folder); err != nil {
+				log.Printf("Warning: failed to save project hashes: %v", err)
+			}
 
 			relPath, _ := filepath.Rel(folder, absFolderPath)
 			idx.sendProgress(types.ProgressEvent{

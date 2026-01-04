@@ -20,7 +20,9 @@
       "Bash(go get:*)",
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(CGO_CFLAGS=\"-Wno-null-character\" go build:*)",
+      "Bash(CGO_CFLAGS=\"-w\" go build:*)"
     ]
   },
   "outputStyle": "Explanatory"

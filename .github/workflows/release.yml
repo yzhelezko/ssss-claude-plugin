@@ -19,27 +19,30 @@ jobs:
     name: Build ${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          # Linux
+          # Linux amd64 - native build
           - os: linux
             arch: amd64
             runner: ubuntu-latest
             ext: ''
+          # Linux arm64 - use arm64 runner
           - os: linux
             arch: arm64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
             ext: ''
-          # macOS
+          # macOS amd64
           - os: darwin
             arch: amd64
-            runner: macos-latest
+            runner: macos-13
             ext: ''
+          # macOS arm64 (Apple Silicon) - native build
           - os: darwin
             arch: arm64
             runner: macos-latest
             ext: ''
-          # Windows
+          # Windows amd64
           - os: windows
             arch: amd64
             runner: windows-latest
@@ -67,17 +70,9 @@ jobs:
       - name: Build binary
         shell: bash
         env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 1
+          CGO_CFLAGS: "-w"  # Suppress warnings from tree-sitter generated C code
         run: |
-          # Install cross-compilation tools if needed
-          if [ "${{ matrix.os }}" == "linux" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            sudo apt-get update
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-            export CC=aarch64-linux-gnu-gcc
-          fi
-
           go build -ldflags="-s -w -X main.Version=${{ steps.version.outputs.version }}" \
             -o ssss-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} .
 
