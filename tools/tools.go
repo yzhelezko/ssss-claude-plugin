@@ -44,6 +44,9 @@ Use natural language queries like:
 			mcp.Required(),
 			mcp.Description("Natural language search query"),
 		),
+		mcp.WithString("path",
+			mcp.Description("Filter results to this subdirectory path (e.g., 'src/components' or './lib'). Only returns results from files within this path."),
+		),
 		mcp.WithNumber("limit",
 			mcp.Description("Maximum number of results to return (default: 10, max: 50)"),
 		),
@@ -55,6 +58,9 @@ Use natural language queries like:
 			return mcp.NewToolResultError("query parameter is required"), nil
 		}
 
+		// Get optional path filter
+		pathFilter := req.GetString("path", "")
+
 		limit := req.GetInt("limit", 10)
 		if limit > 50 {
 			limit = 50
@@ -64,7 +70,7 @@ Use natural language queries like:
 		}
 
 		// Search with usage analysis
-		response, err := idx.SearchWithUsage(ctx, query, "", limit)
+		response, err := idx.SearchWithUsage(ctx, query, pathFilter, limit)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 		}

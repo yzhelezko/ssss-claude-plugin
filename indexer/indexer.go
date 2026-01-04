@@ -390,167 +390,176 @@ func (idx *Indexer) RemoveProject(ctx context.Context, folderPath string) error 
 }
 
 // Search performs semantic search across the global index
-// basePath is used to convert absolute paths to relative paths in results
-func (idx *Indexer) Search(ctx context.Context, query string, basePath string, limit int) ([]types.SearchResult, error) {
-	if basePath == "" {
-		// Default to current working directory
-		basePath, _ = filepath.Abs(".")
-	} else {
-		absPath, err := filepath.Abs(basePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve path: %w", err)
-		}
-		basePath = absPath
-	}
+// filterPath is used to filter results to a specific subdirectory
+func (idx *Indexer) Search(ctx context.Context, query string, filterPath string, limit int) ([]types.SearchResult, error) {
+	// Get current working directory for relative path computation
+	cwd, _ := filepath.Abs(".")
 
-	return idx.store.Search(ctx, query, basePath, limit)
+	return idx.store.Search(ctx, query, cwd, filterPath, limit)
 }
 
 // SearchWithUsage performs semantic search and includes usage information
-func (idx *Indexer) SearchWithUsage(ctx context.Context, query string, basePath string, limit int) (*types.SearchResponse, error) {
-	if basePath == "" {
-		basePath, _ = filepath.Abs(".")
-	} else {
-		absPath, err := filepath.Abs(basePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve path: %w", err)
-		}
-		basePath = absPath
-	}
+// filterPath is used to filter results to a specific subdirectory
+func (idx *Indexer) SearchWithUsage(ctx context.Context, query string, filterPath string, limit int) (*types.SearchResponse, error) {
+	// Get current working directory for relative path computation
+	cwd, _ := filepath.Abs(".")
 
 	// Get base search results
-	results, err := idx.store.Search(ctx, query, basePath, limit)
+	results, err := idx.store.Search(ctx, query, cwd, filterPath, limit)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build usage information for each result
+	// Process results in parallel for faster response
+	var wg sync.WaitGroup
+	var graphMu sync.Mutex
 	graphNodes := make([]types.GraphNode, 0)
 	graphEdges := make([]types.GraphEdge, 0)
 	seenNodes := make(map[string]bool)
 
 	for i := range results {
-		result := &results[i]
-		if result.Name == "" {
+		if results[i].Name == "" {
 			continue
 		}
 
-		// Get metadata for this result
-		metadata, err := idx.store.GetChunkMetadata(ctx, result.Name)
-		if err != nil {
-			continue
-		}
+		wg.Add(1)
+		go func(result *types.SearchResult) {
+			defer wg.Done()
 
-		// Parse calls and look up their locations
-		var callInfos []types.CallInfo
-		var references []string
-		if metadata != nil {
-			if callsStr := metadata["calls"]; callsStr != "" {
-				callNames := splitAndTrim(callsStr)
-				for _, callName := range callNames {
-					// Look up where this called function is defined
-					callInfo, err := idx.store.FindSymbolLocation(ctx, callName)
-					if err != nil {
-						callInfo = &types.CallInfo{Name: callName, IsExternal: true}
-					}
-					// Convert absolute path to relative
-					if callInfo.FilePath != "" && basePath != "" {
-						if rel, err := filepath.Rel(basePath, callInfo.FilePath); err == nil {
-							callInfo.FilePath = "./" + filepath.ToSlash(rel)
-						}
-					}
-					callInfos = append(callInfos, *callInfo)
-				}
+			// Get metadata for this result
+			metadata, err := idx.store.GetChunkMetadata(ctx, result.Name)
+			if err != nil {
+				return
 			}
-			if refsStr := metadata["references"]; refsStr != "" {
-				references = splitAndTrim(refsStr)
-			}
-		}
 
-		// Find callers (3 levels deep)
-		callersByLevel, err := idx.store.FindCallersDeep(ctx, result.Name, 3, 10)
-		if err != nil {
-			log.Printf("Warning: failed to find callers for %s: %v", result.Name, err)
-		}
-
-		// Flatten callers for the result
-		allCallers := make([]types.CallerInfo, 0)
-		hasTestCaller := false
-		for level := 1; level <= 3; level++ {
-			if callers, ok := callersByLevel[level]; ok {
-				for _, caller := range callers {
-					// Convert absolute path to relative
-					relPath := caller.FilePath
-					if basePath != "" {
-						if rel, err := filepath.Rel(basePath, caller.FilePath); err == nil {
-							relPath = "./" + filepath.ToSlash(rel)
-						}
+			// Parse calls and look up their locations in parallel
+			var callInfos []types.CallInfo
+			var references []string
+			if metadata != nil {
+				if callsStr := metadata["calls"]; callsStr != "" {
+					callNames := splitAndTrim(callsStr)
+					// Lookup call locations in parallel
+					callInfosChan := make(chan types.CallInfo, len(callNames))
+					var callWg sync.WaitGroup
+					for _, callName := range callNames {
+						callWg.Add(1)
+						go func(name string) {
+							defer callWg.Done()
+							callInfo, err := idx.store.FindSymbolLocation(ctx, name)
+							if err != nil {
+								callInfo = &types.CallInfo{Name: name, IsExternal: true}
+							}
+							// Convert absolute path to relative
+							if callInfo.FilePath != "" && cwd != "" {
+								if rel, err := filepath.Rel(cwd, callInfo.FilePath); err == nil {
+									callInfo.FilePath = "./" + filepath.ToSlash(rel)
+								}
+							}
+							callInfosChan <- *callInfo
+						}(callName)
 					}
-					caller.FilePath = relPath
-					allCallers = append(allCallers, caller)
-
-					if caller.IsTest {
-						hasTestCaller = true
+					callWg.Wait()
+					close(callInfosChan)
+					for ci := range callInfosChan {
+						callInfos = append(callInfos, ci)
 					}
 				}
+				if refsStr := metadata["references"]; refsStr != "" {
+					references = splitAndTrim(refsStr)
+				}
 			}
-		}
 
-		isExported := metadata != nil && metadata["is_exported"] == "true"
-		isTest := metadata != nil && metadata["is_test"] == "true"
-		isUnused := isExported && len(allCallers) == 0
-		notTested := isExported && !isTest && !hasTestCaller
+			// Find callers (3 levels deep)
+			callersByLevel, err := idx.store.FindCallersDeep(ctx, result.Name, 3, 10)
+			if err != nil {
+				log.Printf("Warning: failed to find callers for %s: %v", result.Name, err)
+			}
 
-		result.Usage = &types.UsageInfo{
-			Calls:      callInfos,
-			CalledBy:   allCallers,
-			References: references,
-			IsExported: isExported,
-			IsTest:     isTest,
-			IsUnused:   isUnused,
-			NotTested:  notTested,
-		}
+			// Flatten callers for the result
+			allCallers := make([]types.CallerInfo, 0)
+			hasTestCaller := false
+			for level := 1; level <= 3; level++ {
+				if callers, ok := callersByLevel[level]; ok {
+					for _, caller := range callers {
+						// Convert absolute path to relative
+						relPath := caller.FilePath
+						if cwd != "" {
+							if rel, err := filepath.Rel(cwd, caller.FilePath); err == nil {
+								relPath = "./" + filepath.ToSlash(rel)
+							}
+						}
+						caller.FilePath = relPath
+						allCallers = append(allCallers, caller)
 
-		// Build graph nodes and edges
-		if !seenNodes[result.Name] {
-			seenNodes[result.Name] = true
-			graphNodes = append(graphNodes, types.GraphNode{
-				ID:         result.Name,
-				Type:       result.ChunkType,
-				FilePath:   result.FilePath,
+						if caller.IsTest {
+							hasTestCaller = true
+						}
+					}
+				}
+			}
+
+			isExported := metadata != nil && metadata["is_exported"] == "true"
+			isTest := metadata != nil && metadata["is_test"] == "true"
+			isUnused := isExported && len(allCallers) == 0
+			notTested := isExported && !isTest && !hasTestCaller
+
+			result.Usage = &types.UsageInfo{
+				Calls:      callInfos,
+				CalledBy:   allCallers,
+				References: references,
 				IsExported: isExported,
 				IsTest:     isTest,
 				IsUnused:   isUnused,
-			})
-		}
+				NotTested:  notTested,
+			}
 
-		// Add edges for calls
-		for _, call := range callInfos {
-			graphEdges = append(graphEdges, types.GraphEdge{
-				From:  result.Name,
-				To:    call.Name,
-				Count: 1,
-			})
-		}
+			// Build graph nodes and edges (thread-safe)
+			graphMu.Lock()
+			defer graphMu.Unlock()
 
-		// Add edges for callers
-		for _, caller := range allCallers {
-			if !seenNodes[caller.Name] {
-				seenNodes[caller.Name] = true
+			if !seenNodes[result.Name] {
+				seenNodes[result.Name] = true
 				graphNodes = append(graphNodes, types.GraphNode{
-					ID:       caller.Name,
-					Type:     "function", // Assume function
-					FilePath: caller.FilePath,
-					IsTest:   caller.IsTest,
+					ID:         result.Name,
+					Type:       result.ChunkType,
+					FilePath:   result.FilePath,
+					IsExported: isExported,
+					IsTest:     isTest,
+					IsUnused:   isUnused,
 				})
 			}
-			graphEdges = append(graphEdges, types.GraphEdge{
-				From:  caller.Name,
-				To:    result.Name,
-				Count: 1,
-			})
-		}
+
+			// Add edges for calls
+			for _, call := range callInfos {
+				graphEdges = append(graphEdges, types.GraphEdge{
+					From:  result.Name,
+					To:    call.Name,
+					Count: 1,
+				})
+			}
+
+			// Add edges for callers
+			for _, caller := range allCallers {
+				if !seenNodes[caller.Name] {
+					seenNodes[caller.Name] = true
+					graphNodes = append(graphNodes, types.GraphNode{
+						ID:       caller.Name,
+						Type:     "function", // Assume function
+						FilePath: caller.FilePath,
+						IsTest:   caller.IsTest,
+					})
+				}
+				graphEdges = append(graphEdges, types.GraphEdge{
+					From:  caller.Name,
+					To:    result.Name,
+					Count: 1,
+				})
+			}
+		}(&results[i])
 	}
+
+	// Wait for all parallel processing to complete
+	wg.Wait()
 
 	return &types.SearchResponse{
 		Count:   len(results),

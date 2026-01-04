@@ -24,6 +24,14 @@ Use the `search` MCP tool to find and analyze code. This is the PRIMARY tool for
 - Flags **untested** code (`not_tested: true`)
 - Shows **exported** status (`is_exported: true`)
 
+## Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `query` | Yes | Natural language search query |
+| `path` | No | Filter to subdirectory (e.g., `"src/components"`) |
+| `limit` | No | Max results (default: 10, max: 50) |
+
 ## Query Examples
 
 ```
@@ -34,6 +42,13 @@ Use the `search` MCP tool to find and analyze code. This is the PRIMARY tool for
 "HTTP middleware"
 "config parser"
 ```
+
+## Path Filtering
+
+Use `path` to narrow results to specific directories:
+- `path: "src/api"` - Only search in src/api folder
+- `path: "lib/utils"` - Only search in lib/utils folder
+- `path: "./tests"` - Only search in tests folder
 
 ## Response Fields
 

@@ -122,15 +122,31 @@ When running as an MCP server, the following tool is exposed:
 
 | Tool | Parameters | Description |
 |------|------------|-------------|
-| `search` | `query` (required), `limit` (optional) | Semantic code search with usage analysis |
+| `search` | `query` (required), `path` (optional), `limit` (optional) | Semantic code search with usage analysis |
 
-**Example tool call:**
+**Parameters:**
+- `query` - Natural language search query (required)
+- `path` - Filter results to a specific subdirectory, e.g., `"src/components"` or `"./lib"` (optional)
+- `limit` - Maximum results to return, default 10, max 50 (optional)
+
+**Example tool calls:**
 ```json
 {
   "name": "search",
   "arguments": {
     "query": "authentication middleware",
     "limit": 10
+  }
+}
+```
+
+```json
+{
+  "name": "search",
+  "arguments": {
+    "query": "React hooks",
+    "path": "src/components",
+    "limit": 5
   }
 }
 ```

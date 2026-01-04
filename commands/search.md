@@ -16,3 +16,11 @@ Search the indexed codebase and return relevant results. For each result, show:
    - Whether it has test coverage
 
 Present results in a clear, organized format with the most relevant matches first.
+
+## Path Filtering
+
+You can use the `path` parameter to filter results to a specific subdirectory:
+- `path: "src/components"` - Only search in src/components
+- `path: "lib"` - Only search in lib folder
+
+This is useful when the user asks to search in a specific part of the codebase.

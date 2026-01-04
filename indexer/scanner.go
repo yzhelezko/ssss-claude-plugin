@@ -17,7 +17,7 @@ import (
 // Scanner handles file discovery and filtering
 type Scanner struct {
 	cfg      *config.Config
-	ignorer  *ignore.GitIgnore
+	ignorers map[string]*ignore.GitIgnore // Map of directory path -> gitignore
 	rootPath string
 }
 
@@ -31,15 +31,70 @@ func NewScanner(cfg *config.Config, rootPath string) (*Scanner, error) {
 	scanner := &Scanner{
 		cfg:      cfg,
 		rootPath: absPath,
+		ignorers: make(map[string]*ignore.GitIgnore),
 	}
 
-	// Load .gitignore if it exists
-	gitignorePath := filepath.Join(absPath, ".gitignore")
-	if _, err := os.Stat(gitignorePath); err == nil {
-		scanner.ignorer, _ = ignore.CompileIgnoreFile(gitignorePath)
-	}
+	// Load root .gitignore if it exists
+	scanner.loadGitignore(absPath)
 
 	return scanner, nil
+}
+
+// loadGitignore loads .gitignore from a directory if it exists
+func (s *Scanner) loadGitignore(dirPath string) {
+	gitignorePath := filepath.Join(dirPath, ".gitignore")
+	if _, err := os.Stat(gitignorePath); err == nil {
+		if ignorer, err := ignore.CompileIgnoreFile(gitignorePath); err == nil {
+			s.ignorers[dirPath] = ignorer
+		}
+	}
+}
+
+// isIgnoredByGitignore checks if a path is ignored by any applicable .gitignore
+func (s *Scanner) isIgnoredByGitignore(absPath string, isDir bool) bool {
+	// Get relative path from root
+	relPath, err := filepath.Rel(s.rootPath, absPath)
+	if err != nil {
+		return false
+	}
+
+	// For directories, append "/" for proper gitignore matching
+	matchPath := filepath.ToSlash(relPath)
+	if isDir {
+		matchPath += "/"
+	}
+
+	// Check all gitignore files from root to parent directory
+	currentDir := s.rootPath
+	pathParts := strings.Split(filepath.ToSlash(relPath), "/")
+
+	// Check root gitignore first
+	if ignorer, ok := s.ignorers[s.rootPath]; ok {
+		if ignorer.MatchesPath(matchPath) {
+			return true
+		}
+	}
+
+	// Check gitignores in each parent directory
+	for i := 0; i < len(pathParts)-1; i++ {
+		currentDir = filepath.Join(currentDir, pathParts[i])
+		if ignorer, ok := s.ignorers[currentDir]; ok {
+			// Get path relative to this gitignore's directory
+			subRelPath, err := filepath.Rel(currentDir, absPath)
+			if err != nil {
+				continue
+			}
+			subMatchPath := filepath.ToSlash(subRelPath)
+			if isDir {
+				subMatchPath += "/"
+			}
+			if ignorer.MatchesPath(subMatchPath) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // Scan walks the directory tree and returns all indexable files
@@ -59,14 +114,19 @@ func (s *Scanner) Scan() ([]types.FileInfo, error) {
 
 		// Check if directory should be excluded
 		if info.IsDir() {
-			if s.shouldExcludeDir(info.Name(), relPath) {
-				return filepath.SkipDir
+			// Skip root directory itself
+			if path != s.rootPath {
+				if s.shouldExcludeDir(info.Name(), path) {
+					return filepath.SkipDir
+				}
 			}
+			// Load .gitignore from this directory if it exists
+			s.loadGitignore(path)
 			return nil
 		}
 
 		// Check if file should be indexed
-		if !s.shouldIncludeFile(info, relPath) {
+		if !s.shouldIncludeFile(info, path) {
 			return nil
 		}
 
@@ -95,14 +155,15 @@ func (s *Scanner) Scan() ([]types.FileInfo, error) {
 }
 
 // shouldExcludeDir checks if a directory should be excluded
-func (s *Scanner) shouldExcludeDir(name, relPath string) bool {
+// absPath is the absolute path to the directory
+func (s *Scanner) shouldExcludeDir(name, absPath string) bool {
 	// Always exclude configured directories
 	if s.cfg.IsExcludedDir(name) {
 		return true
 	}
 
-	// Check .gitignore
-	if s.ignorer != nil && s.ignorer.MatchesPath(relPath+"/") {
+	// Check all applicable .gitignore files
+	if s.isIgnoredByGitignore(absPath, true) {
 		return true
 	}
 
@@ -110,7 +171,8 @@ func (s *Scanner) shouldExcludeDir(name, relPath string) bool {
 }
 
 // shouldIncludeFile checks if a file should be indexed
-func (s *Scanner) shouldIncludeFile(info os.FileInfo, relPath string) bool {
+// absPath is the absolute path to the file
+func (s *Scanner) shouldIncludeFile(info os.FileInfo, absPath string) bool {
 	// Check file size
 	if info.Size() > s.cfg.MaxFileSize {
 		return false
@@ -131,8 +193,8 @@ func (s *Scanner) shouldIncludeFile(info os.FileInfo, relPath string) bool {
 		return false
 	}
 
-	// Check .gitignore
-	if s.ignorer != nil && s.ignorer.MatchesPath(relPath) {
+	// Check all applicable .gitignore files
+	if s.isIgnoredByGitignore(absPath, false) {
 		return false
 	}
 

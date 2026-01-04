@@ -117,9 +117,10 @@ func (s *Store) AddChunks(ctx context.Context, chunks []types.Chunk) error {
 }
 
 // Search performs semantic search across the global collection
-// Returns paths relative to the provided basePath (current working directory)
-// Only returns results within the basePath (excludes ../ paths)
-func (s *Store) Search(ctx context.Context, query string, basePath string, limit int) ([]types.SearchResult, error) {
+// cwd: Current working directory for computing relative paths
+// filterPath: Optional path filter - only return results from files within this directory
+// Returns paths relative to cwd, filtered by filterPath if provided
+func (s *Store) Search(ctx context.Context, query string, cwd string, filterPath string, limit int) ([]types.SearchResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -127,7 +128,7 @@ func (s *Store) Search(ctx context.Context, query string, basePath string, limit
 		limit = 10
 	}
 
-	// Query more results than needed since we'll filter out files outside basePath
+	// Query more results than needed since we'll filter
 	queryLimit := limit * 3
 	if queryLimit < 30 {
 		queryLimit = 30
@@ -138,6 +139,18 @@ func (s *Store) Search(ctx context.Context, query string, basePath string, limit
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
 
+	// Resolve filterPath to absolute if provided
+	var absFilterPath string
+	if filterPath != "" {
+		// Handle relative paths - resolve from cwd
+		if !filepath.IsAbs(filterPath) {
+			absFilterPath = filepath.Join(cwd, filterPath)
+		} else {
+			absFilterPath = filterPath
+		}
+		absFilterPath = filepath.Clean(absFilterPath)
+	}
+
 	results := make([]types.SearchResult, 0, limit)
 	for _, r := range chromemResults {
 		if len(results) >= limit {
@@ -146,16 +159,29 @@ func (s *Store) Search(ctx context.Context, query string, basePath string, limit
 
 		absolutePath := r.Metadata["absolute_path"]
 
-		// Convert to relative path from basePath (CWD)
+		// Apply path filter if specified
+		if absFilterPath != "" {
+			cleanAbsPath := filepath.Clean(absolutePath)
+			// Check if file is within the filter path
+			if !strings.HasPrefix(cleanAbsPath, absFilterPath) {
+				continue
+			}
+			// Ensure it's a proper directory prefix (not partial match)
+			if len(cleanAbsPath) > len(absFilterPath) && cleanAbsPath[len(absFilterPath)] != filepath.Separator {
+				continue
+			}
+		}
+
+		// Convert to relative path from cwd
 		relativePath := absolutePath
-		if basePath != "" {
-			rel, err := filepath.Rel(basePath, absolutePath)
+		if cwd != "" {
+			rel, err := filepath.Rel(cwd, absolutePath)
 			if err != nil {
 				continue // Skip if can't compute relative path
 			}
 
-			// Skip files outside the current working directory (../ paths)
-			if strings.HasPrefix(rel, "..") {
+			// Skip files outside cwd (../ paths) only if no filter specified
+			if absFilterPath == "" && strings.HasPrefix(rel, "..") {
 				continue
 			}
 
