@@ -76,7 +76,7 @@ Use natural language queries like:
 			Path:      req.GetString("path", ""),
 			Language:  req.GetString("language", ""),
 			ChunkType: req.GetString("type", ""),
-			CodeOnly:  req.GetBool("code_only", false),
+			CodeOnly:  req.GetBool("code_only", true), // Default true: exclude JSON, YAML, MD, etc.
 		}
 
 		// Get min_similarity (0.0-1.0)

@@ -612,6 +612,30 @@ func (p *Parser) findCalls(node *sitter.Node, content []byte, language string, c
 			nameNode = node.ChildByFieldName("name")
 			isCall = true
 		}
+	case "bash":
+		// Bash function calls are just command names (no parentheses)
+		if nodeType == "command" {
+			if nameNode = node.ChildByFieldName("name"); nameNode != nil {
+				isCall = true
+			} else if node.ChildCount() > 0 {
+				// First child is often the command name
+				firstChild := node.Child(0)
+				if firstChild != nil && (firstChild.Type() == "command_name" || firstChild.Type() == "word") {
+					nameNode = firstChild
+					isCall = true
+				}
+			}
+		}
+	case "lua":
+		if nodeType == "function_call" {
+			if fn := node.ChildByFieldName("name"); fn != nil {
+				nameNode = fn
+				isCall = true
+			} else if node.ChildCount() > 0 {
+				nameNode = node.Child(0)
+				isCall = true
+			}
+		}
 	}
 
 	if isCall && nameNode != nil {
@@ -896,6 +920,29 @@ func isKeyword(name, language string) bool {
 			"interface": true, "type": true, "enum": true, "namespace": true,
 			"public": true, "private": true, "protected": true, "readonly": true,
 			"any": true, "unknown": true, "never": true, "void": true,
+		},
+		"bash": {
+			// Shell builtins and common commands (not user functions)
+			"if": true, "then": true, "else": true, "elif": true, "fi": true,
+			"for": true, "while": true, "do": true, "done": true, "in": true,
+			"case": true, "esac": true, "function": true, "return": true,
+			"local": true, "export": true, "readonly": true, "declare": true,
+			"set": true, "unset": true, "shift": true, "exit": true,
+			"true": true, "false": true, "test": true, "[": true, "[[": true,
+			// Common external commands (not user-defined functions)
+			"echo": true, "printf": true, "read": true, "cd": true, "pwd": true,
+			"ls": true, "cat": true, "grep": true, "sed": true, "awk": true,
+			"rm": true, "cp": true, "mv": true, "mkdir": true, "touch": true,
+			"chmod": true, "chown": true, "find": true, "xargs": true,
+			"curl": true, "wget": true, "tar": true, "gzip": true, "unzip": true,
+			"git": true, "docker": true, "npm": true, "yarn": true, "go": true,
+			"python": true, "python3": true, "pip": true, "node": true,
+			"sudo": true, "su": true, "ssh": true, "scp": true,
+			"head": true, "tail": true, "sort": true, "uniq": true, "wc": true,
+			"tr": true, "cut": true, "basename": true, "dirname": true,
+			"date": true, "sleep": true, "kill": true, "ps": true, "top": true,
+			"which": true, "whereis": true, "type": true, "command": true,
+			"source": true, ".": true, "eval": true, "exec": true,
 		},
 	}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -140,6 +141,10 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, opts types
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
 
+	// Prepare query terms for keyword boosting (lowercase, split by space)
+	queryLower := strings.ToLower(query)
+	queryTerms := strings.Fields(queryLower)
+
 	// Resolve filterPath to absolute if provided
 	var absFilterPath string
 	if opts.Path != "" {
@@ -158,12 +163,8 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, opts types
 	// Normalize chunk type filter to lowercase
 	chunkTypeFilter := strings.ToLower(opts.ChunkType)
 
-	results := make([]types.SearchResult, 0, limit)
+	results := make([]types.SearchResult, 0, len(chromemResults))
 	for _, r := range chromemResults {
-		if len(results) >= limit {
-			break
-		}
-
 		// Apply minimum similarity filter
 		if opts.MinSimilarity > 0 && r.Similarity < opts.MinSimilarity {
 			continue
@@ -225,17 +226,49 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, opts types
 			rawContent = r.Content
 		}
 
+		name := r.Metadata["name"]
+
+		// Apply keyword boosting: boost similarity when query terms match the name
+		boostedSimilarity := r.Similarity
+		if len(queryTerms) > 0 && name != "" {
+			nameLower := strings.ToLower(name)
+			matchCount := 0
+			for _, term := range queryTerms {
+				if strings.Contains(nameLower, term) {
+					matchCount++
+				}
+			}
+			if matchCount > 0 {
+				// Boost by up to 0.3 based on how many terms match
+				boost := float32(matchCount) / float32(len(queryTerms)) * 0.3
+				boostedSimilarity = r.Similarity + boost
+				if boostedSimilarity > 1.0 {
+					boostedSimilarity = 1.0
+				}
+			}
+		}
+
 		result := types.SearchResult{
 			FilePath:     relativePath,
 			AbsolutePath: absolutePath,
 			ChunkType:    chunkType,
-			Name:         r.Metadata["name"],
+			Name:         name,
 			Lines:        fmt.Sprintf("%s-%s", r.Metadata["start_line"], r.Metadata["end_line"]),
 			Content:      rawContent,
-			Similarity:   r.Similarity,
+			Similarity:   boostedSimilarity,
 			Language:     language,
 		}
 		results = append(results, result)
+	}
+
+	// Re-sort results by boosted similarity (descending)
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Similarity > results[j].Similarity
+	})
+
+	// Trim to limit after re-sorting
+	if len(results) > limit {
+		results = results[:limit]
 	}
 
 	return results, nil

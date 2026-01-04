@@ -31,6 +31,7 @@ type Indexer struct {
 	cfg            *config.Config
 	store          *store.Store
 	hashStore      *store.FileHashStore
+	callerIndex    *store.CallerIndex // Inverted index for O(1) caller lookups
 	embedder       *Embedder
 	chunker        *Chunker
 	watcherMgr     *watcher.WatcherManager
@@ -42,11 +43,12 @@ type Indexer struct {
 // NewIndexer creates a new Indexer instance
 func NewIndexer(cfg *config.Config, st *store.Store, hashStore *store.FileHashStore, embedder *Embedder) *Indexer {
 	return &Indexer{
-		cfg:       cfg,
-		store:     st,
-		hashStore: hashStore,
-		embedder:  embedder,
-		chunker:   NewChunker(cfg.MaxChunkSize, cfg.ChunkOverlap),
+		cfg:         cfg,
+		store:       st,
+		hashStore:   hashStore,
+		callerIndex: store.NewCallerIndex(cfg),
+		embedder:    embedder,
+		chunker:     NewChunker(cfg.MaxChunkSize, cfg.ChunkOverlap),
 	}
 }
 
@@ -222,6 +224,7 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 		if err := idx.store.DeleteFileChunks(ctx, absFilePath); err != nil {
 			log.Printf("Warning: failed to delete chunks for %s: %v", absFilePath, err)
 		}
+		idx.callerIndex.RemoveFileCalls(absFilePath) // Remove from caller index
 		idx.hashStore.RemoveFileHash(absPath, absFilePath)
 	}
 
@@ -229,6 +232,7 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 		if err := idx.store.DeleteFileChunks(ctx, absFilePath); err != nil {
 			log.Printf("Warning: failed to delete chunks for %s: %v", absFilePath, err)
 		}
+		idx.callerIndex.RemoveFileCalls(absFilePath) // Remove from caller index before re-adding
 	}
 
 	// Process new and modified files
@@ -273,6 +277,10 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 				log.Printf("Warning: failed to add chunks for %s: %v", absFilePath, err)
 				continue
 			}
+			// Update caller index with calls from each chunk
+			for _, chunk := range chunks {
+				idx.callerIndex.AddChunkCalls(chunk)
+			}
 			totalChunks += len(chunks)
 		}
 
@@ -284,6 +292,11 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 	// Save file hashes
 	if err := idx.hashStore.SaveProjectHashes(absPath); err != nil {
 		log.Printf("Warning: failed to save file hashes: %v", err)
+	}
+
+	// Save caller index
+	if err := idx.callerIndex.Save(); err != nil {
+		log.Printf("Warning: failed to save caller index: %v", err)
 	}
 
 	// Start file watcher if enabled
@@ -379,6 +392,12 @@ func (idx *Indexer) RemoveProject(ctx context.Context, folderPath string) error 
 		if err := idx.store.DeleteFileChunks(ctx, filePath); err != nil {
 			log.Printf("Warning: failed to delete chunks for %s: %v", filePath, err)
 		}
+		idx.callerIndex.RemoveFileCalls(filePath) // Remove from caller index
+	}
+
+	// Save caller index after removal
+	if err := idx.callerIndex.Save(); err != nil {
+		log.Printf("Warning: failed to save caller index: %v", err)
 	}
 
 	// Delete file hashes
@@ -467,11 +486,8 @@ func (idx *Indexer) SearchWithUsage(ctx context.Context, query string, opts type
 				}
 			}
 
-			// Find callers (3 levels deep)
-			callersByLevel, err := idx.store.FindCallersDeep(ctx, result.Name, 3, 10)
-			if err != nil {
-				log.Printf("Warning: failed to find callers for %s: %v", result.Name, err)
-			}
+			// Find callers (3 levels deep) using the fast caller index
+			callersByLevel := idx.callerIndex.FindCallersDeep(result.Name, 3, 10)
 
 			// Flatten callers for the result
 			allCallers := make([]types.CallerInfo, 0)
