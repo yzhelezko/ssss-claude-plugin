@@ -9,7 +9,7 @@
       "name": "ssss",
       "source": "./",
       "description": "Stupid Simple Semantic Search - AI-powered code search using local Ollama embeddings with usage tracking and call graph analysis",
-      "version": "1.0.6",
+      "version": "1.0.7",
       "author": {
         "name": "yzhelezko"
       },
