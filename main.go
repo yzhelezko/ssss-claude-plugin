@@ -104,7 +104,7 @@ func main() {
 	var webServer *webui.Server
 	var actualWebUIPort int
 	if cfg.WebUIEnabled {
-		webServer = webui.NewServer(cfg, idx, cfg.WebUIPort)
+		webServer = webui.NewServer(cfg, idx, cfg.WebUIPort, Version)
 		if err := webServer.Start(); err != nil {
 			log.Printf("Failed to start web UI: %v", err)
 		} else {

@@ -161,6 +161,7 @@ type IndexResult struct {
 
 // StatusResult represents the overall status of the server
 type StatusResult struct {
+	Version        string `json:"version"`                  // Application version
 	TotalChunks    int    `json:"total_chunks"`
 	OllamaStatus   string `json:"ollama_status"`            // connected, disconnected
 	DBPath         string `json:"db_path"`

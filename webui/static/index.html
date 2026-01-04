@@ -505,7 +505,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>MCP Semantic Search</h1>
+            <h1>MCP Semantic Search <span id="version-badge" class="badge blue" style="font-size: 11px; font-weight: normal;"></span></h1>
             <div class="header-info">
                 <div id="watcher-activity" class="watcher-activity">
                     <span class="watcher-spinner"></span>
@@ -673,6 +673,9 @@
                 document.getElementById('chunk-count').textContent = d.total_chunks || 0;
                 const badge = document.getElementById('ollama-badge');
                 badge.className = 'badge ' + (d.ollama_status === 'connected' ? 'green' : 'red');
+                if (d.version) {
+                    document.getElementById('version-badge').textContent = 'v' + d.version;
+                }
                 if (d.current_folder) {
                     document.getElementById('cwd-box').style.display = 'flex';
                     document.getElementById('cwd-path').textContent = d.current_folder;

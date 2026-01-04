@@ -26,6 +26,7 @@ type Server struct {
 	server     *http.Server
 	port       int
 	actualPort int // The port actually bound (may differ if original was busy)
+	version    string
 
 	// SSE clients for progress updates
 	sseClients   map[chan types.ProgressEvent]bool
@@ -33,11 +34,12 @@ type Server struct {
 }
 
 // NewServer creates a new web UI server
-func NewServer(cfg *config.Config, idx *indexer.Indexer, port int) *Server {
+func NewServer(cfg *config.Config, idx *indexer.Indexer, port int, version string) *Server {
 	s := &Server{
 		cfg:        cfg,
 		idx:        idx,
 		port:       port,
+		version:    version,
 		sseClients: make(map[chan types.ProgressEvent]bool),
 	}
 
@@ -243,6 +245,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+
+	// Add version to status
+	status.Version = s.version
 
 	writeJSON(w, http.StatusOK, status)
 }
