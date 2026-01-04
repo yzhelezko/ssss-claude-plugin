@@ -42,8 +42,15 @@ irm https://raw.githubusercontent.com/yzhelezko/ssss-claude-plugin/main/scripts/
 ### Install Claude Code Plugin
 
 After installing the binary, install the plugin in Claude Code:
+
+**Step 1: Add the marketplace**
 ```
-/install github:yzhelezko/ssss-claude-plugin
+/plugin marketplace add yzhelezko/ssss-claude-plugin
+```
+
+**Step 2: Install the plugin**
+```
+/plugin install ssss@ssss-marketplace
 ```
 
 ### Install as Standalone MCP Server

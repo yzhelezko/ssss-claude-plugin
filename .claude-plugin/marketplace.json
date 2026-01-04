@@ -1,0 +1,27 @@
+{
+  "name": "ssss-marketplace",
+  "owner": {
+    "name": "yzhelezko",
+    "email": "yzhelezko@users.noreply.github.com"
+  },
+  "plugins": [
+    {
+      "name": "ssss",
+      "source": "./",
+      "description": "Stupid Simple Semantic Search - AI-powered code search using local Ollama embeddings with usage tracking and call graph analysis",
+      "version": "1.0.0",
+      "author": {
+        "name": "yzhelezko"
+      },
+      "keywords": [
+        "semantic-search",
+        "code-search",
+        "embeddings",
+        "ollama",
+        "mcp",
+        "code-analysis",
+        "call-graph"
+      ]
+    }
+  ]
+}
