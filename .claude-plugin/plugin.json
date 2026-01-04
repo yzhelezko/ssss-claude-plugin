@@ -6,10 +6,7 @@
     "name": "yzhelezko"
   },
   "homepage": "https://github.com/yzhelezko/ssss-claude-plugin",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yzhelezko/ssss-claude-plugin.git"
-  },
+  "repository": "https://github.com/yzhelezko/ssss-claude-plugin",
   "license": "MIT",
   "keywords": [
     "semantic-search",
