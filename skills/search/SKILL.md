@@ -30,7 +30,11 @@ Use the `search` MCP tool to find and analyze code. This is the PRIMARY tool for
 |-----------|----------|-------------|
 | `query` | Yes | Natural language search query |
 | `path` | No | Filter to subdirectory (e.g., `"src/components"`) |
-| `limit` | No | Max results (default: 10, max: 50) |
+| `language` | No | Filter by language (e.g., `"go"`, `"python"`, `"typescript"`) |
+| `type` | No | Filter by type: `"function"`, `"class"`, `"method"`, or `"all"` |
+| `code_only` | No | Exclude non-code files (JSON, YAML, MD, etc.) |
+| `min_similarity` | No | Minimum similarity threshold (0.0-1.0) |
+| `limit` | No | Max results (default: 5, max: 50) |
 
 ## Query Examples
 
@@ -43,12 +47,21 @@ Use the `search` MCP tool to find and analyze code. This is the PRIMARY tool for
 "config parser"
 ```
 
-## Path Filtering
+## Filter Examples
 
-Use `path` to narrow results to specific directories:
-- `path: "src/api"` - Only search in src/api folder
-- `path: "lib/utils"` - Only search in lib/utils folder
-- `path: "./tests"` - Only search in tests folder
+```
+# Only Go functions
+query: "error handling", language: "go", type: "function"
+
+# Only TypeScript in src folder
+query: "component", path: "src", language: "typescript"
+
+# High-confidence code only
+query: "api endpoint", code_only: true, min_similarity: 0.5
+
+# More results
+query: "utility function", limit: 20
+```
 
 ## Response Fields
 
@@ -58,6 +71,7 @@ Use `path` to narrow results to specific directories:
 | `lines` | Line range (e.g., "28-157") |
 | `name` | Function/class name |
 | `content` | Code snippet |
+| `language` | Programming language |
 | `usage.calls` | Functions this code calls |
 | `usage.called_by` | Functions that call this code |
 | `is_unused` | Never called anywhere |

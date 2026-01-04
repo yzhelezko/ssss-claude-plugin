@@ -290,9 +290,13 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Query   string `json:"query"`
-		Project string `json:"project"`
-		Limit   int    `json:"limit"`
+		Query         string  `json:"query"`
+		Project       string  `json:"project"`
+		Limit         int     `json:"limit"`
+		Language      string  `json:"language"`
+		ChunkType     string  `json:"type"`
+		CodeOnly      bool    `json:"code_only"`
+		MinSimilarity float32 `json:"min_similarity"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -306,14 +310,24 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Limit <= 0 {
-		req.Limit = 10
+		req.Limit = 5
 	}
 	if req.Limit > 50 {
 		req.Limit = 50
 	}
 
+	// Build search options
+	opts := types.SearchOptions{
+		Path:          req.Project,
+		Language:      req.Language,
+		ChunkType:     req.ChunkType,
+		CodeOnly:      req.CodeOnly,
+		MinSimilarity: req.MinSimilarity,
+		Limit:         req.Limit,
+	}
+
 	// Use SearchWithUsage to get usage maps and call graphs
-	response, err := s.idx.SearchWithUsage(r.Context(), req.Query, req.Project, req.Limit)
+	response, err := s.idx.SearchWithUsage(r.Context(), req.Query, opts)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

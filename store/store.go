@@ -118,20 +118,21 @@ func (s *Store) AddChunks(ctx context.Context, chunks []types.Chunk) error {
 
 // Search performs semantic search across the global collection
 // cwd: Current working directory for computing relative paths
-// filterPath: Optional path filter - only return results from files within this directory
-// Returns paths relative to cwd, filtered by filterPath if provided
-func (s *Store) Search(ctx context.Context, query string, cwd string, filterPath string, limit int) ([]types.SearchResult, error) {
+// opts: Search options including path filter, language filter, etc.
+// Returns paths relative to cwd, filtered according to options
+func (s *Store) Search(ctx context.Context, query string, cwd string, opts types.SearchOptions) ([]types.SearchResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	limit := opts.Limit
 	if limit <= 0 {
-		limit = 10
+		limit = 5
 	}
 
 	// Query more results than needed since we'll filter
-	queryLimit := limit * 3
-	if queryLimit < 30 {
-		queryLimit = 30
+	queryLimit := limit * 5
+	if queryLimit < 50 {
+		queryLimit = 50
 	}
 
 	chromemResults, err := s.collection.Query(ctx, query, queryLimit, nil, nil)
@@ -141,15 +142,21 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, filterPath
 
 	// Resolve filterPath to absolute if provided
 	var absFilterPath string
-	if filterPath != "" {
+	if opts.Path != "" {
 		// Handle relative paths - resolve from cwd
-		if !filepath.IsAbs(filterPath) {
-			absFilterPath = filepath.Join(cwd, filterPath)
+		if !filepath.IsAbs(opts.Path) {
+			absFilterPath = filepath.Join(cwd, opts.Path)
 		} else {
-			absFilterPath = filterPath
+			absFilterPath = opts.Path
 		}
 		absFilterPath = filepath.Clean(absFilterPath)
 	}
+
+	// Normalize language filter to lowercase
+	languageFilter := strings.ToLower(opts.Language)
+
+	// Normalize chunk type filter to lowercase
+	chunkTypeFilter := strings.ToLower(opts.ChunkType)
 
 	results := make([]types.SearchResult, 0, limit)
 	for _, r := range chromemResults {
@@ -157,7 +164,31 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, filterPath
 			break
 		}
 
+		// Apply minimum similarity filter
+		if opts.MinSimilarity > 0 && r.Similarity < opts.MinSimilarity {
+			continue
+		}
+
 		absolutePath := r.Metadata["absolute_path"]
+		language := r.Metadata["language"]
+		chunkType := r.Metadata["chunk_type"]
+
+		// Apply language filter
+		if languageFilter != "" && strings.ToLower(language) != languageFilter {
+			continue
+		}
+
+		// Apply code_only filter (exclude non-code files)
+		if opts.CodeOnly && types.NonCodeLanguages[strings.ToLower(language)] {
+			continue
+		}
+
+		// Apply chunk type filter
+		if chunkTypeFilter != "" && chunkTypeFilter != "all" {
+			if strings.ToLower(chunkType) != chunkTypeFilter {
+				continue
+			}
+		}
 
 		// Apply path filter if specified
 		if absFilterPath != "" {
@@ -197,12 +228,12 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, filterPath
 		result := types.SearchResult{
 			FilePath:     relativePath,
 			AbsolutePath: absolutePath,
-			ChunkType:    r.Metadata["chunk_type"],
+			ChunkType:    chunkType,
 			Name:         r.Metadata["name"],
 			Lines:        fmt.Sprintf("%s-%s", r.Metadata["start_line"], r.Metadata["end_line"]),
 			Content:      rawContent,
 			Similarity:   r.Similarity,
-			Language:     r.Metadata["language"],
+			Language:     language,
 		}
 		results = append(results, result)
 	}

@@ -177,10 +177,14 @@ func (u *Updater) BackgroundCheck(ctx context.Context) {
 }
 
 // BackgroundAutoUpdate runs update check and auto-updates if available
-func (u *Updater) BackgroundAutoUpdate(ctx context.Context) {
+// If exitAfterUpdate is provided and true, the process will exit after a successful update
+// so the MCP client can restart it with the new binary
+func (u *Updater) BackgroundAutoUpdate(ctx context.Context, exitAfterUpdate ...bool) {
 	if !u.enabled {
 		return
 	}
+
+	shouldExit := len(exitAfterUpdate) > 0 && exitAfterUpdate[0]
 
 	go func() {
 		// Small delay to not slow down startup
@@ -195,8 +199,19 @@ func (u *Updater) BackgroundAutoUpdate(ctx context.Context) {
 		if result.Updated {
 			fmt.Fprintf(os.Stderr, "\n╔══════════════════════════════════════════════════════════╗\n")
 			fmt.Fprintf(os.Stderr, "║  UPDATED: %s → %s\n", result.CurrentVersion, result.LatestVersion)
-			fmt.Fprintf(os.Stderr, "║  Please restart to use the new version\n")
+			if shouldExit {
+				fmt.Fprintf(os.Stderr, "║  Restarting to apply update...\n")
+			} else {
+				fmt.Fprintf(os.Stderr, "║  Please restart to use the new version\n")
+			}
 			fmt.Fprintf(os.Stderr, "╚══════════════════════════════════════════════════════════╝\n\n")
+
+			if shouldExit {
+				// Give time for the message to be displayed
+				time.Sleep(1 * time.Second)
+				// Exit gracefully - MCP client will restart the server
+				os.Exit(0)
+			}
 		}
 	}()
 }

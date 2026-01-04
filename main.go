@@ -92,8 +92,8 @@ func main() {
 	if cfg.AutoUpdateEnabled {
 		appUpdater := updater.NewUpdater(Version, true)
 		if cfg.AutoUpdateApply {
-			// Auto-apply updates in background
-			appUpdater.BackgroundAutoUpdate(context.Background())
+			// Auto-apply updates in background and exit to restart with new binary
+			appUpdater.BackgroundAutoUpdate(context.Background(), true)
 		} else {
 			// Just check and notify
 			appUpdater.BackgroundCheck(context.Background())

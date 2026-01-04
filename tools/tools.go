@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"mcp-semantic-search/indexer"
+	"mcp-semantic-search/types"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -47,8 +48,20 @@ Use natural language queries like:
 		mcp.WithString("path",
 			mcp.Description("Filter results to this subdirectory path (e.g., 'src/components' or './lib'). Only returns results from files within this path."),
 		),
+		mcp.WithString("language",
+			mcp.Description("Filter by programming language (e.g., 'go', 'python', 'javascript', 'typescript'). Case-insensitive."),
+		),
+		mcp.WithString("type",
+			mcp.Description("Filter by chunk type: 'function', 'class', 'method', or 'all' (default: 'all')."),
+		),
+		mcp.WithBoolean("code_only",
+			mcp.Description("Exclude non-code files like JSON, YAML, Markdown, HTML, CSS (default: false)."),
+		),
+		mcp.WithNumber("min_similarity",
+			mcp.Description("Minimum similarity score threshold (0.0-1.0). Results below this score are filtered out."),
+		),
 		mcp.WithNumber("limit",
-			mcp.Description("Maximum number of results to return (default: 10, max: 50)"),
+			mcp.Description("Maximum number of results to return (default: 5, max: 50)"),
 		),
 	)
 
@@ -58,19 +71,30 @@ Use natural language queries like:
 			return mcp.NewToolResultError("query parameter is required"), nil
 		}
 
-		// Get optional path filter
-		pathFilter := req.GetString("path", "")
-
-		limit := req.GetInt("limit", 10)
-		if limit > 50 {
-			limit = 50
+		// Build search options from parameters
+		opts := types.SearchOptions{
+			Path:      req.GetString("path", ""),
+			Language:  req.GetString("language", ""),
+			ChunkType: req.GetString("type", ""),
+			CodeOnly:  req.GetBool("code_only", false),
 		}
-		if limit < 1 {
-			limit = 1
+
+		// Get min_similarity (0.0-1.0)
+		if minSim := req.GetFloat("min_similarity", 0.0); minSim > 0 && minSim <= 1.0 {
+			opts.MinSimilarity = float32(minSim)
+		}
+
+		// Get limit with new default of 5
+		opts.Limit = req.GetInt("limit", 5)
+		if opts.Limit > 50 {
+			opts.Limit = 50
+		}
+		if opts.Limit < 1 {
+			opts.Limit = 1
 		}
 
 		// Search with usage analysis
-		response, err := idx.SearchWithUsage(ctx, query, pathFilter, limit)
+		response, err := idx.SearchWithUsage(ctx, query, opts)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Search failed: %v", err)), nil
 		}

@@ -390,22 +390,20 @@ func (idx *Indexer) RemoveProject(ctx context.Context, folderPath string) error 
 }
 
 // Search performs semantic search across the global index
-// filterPath is used to filter results to a specific subdirectory
-func (idx *Indexer) Search(ctx context.Context, query string, filterPath string, limit int) ([]types.SearchResult, error) {
+func (idx *Indexer) Search(ctx context.Context, query string, opts types.SearchOptions) ([]types.SearchResult, error) {
 	// Get current working directory for relative path computation
 	cwd, _ := filepath.Abs(".")
 
-	return idx.store.Search(ctx, query, cwd, filterPath, limit)
+	return idx.store.Search(ctx, query, cwd, opts)
 }
 
 // SearchWithUsage performs semantic search and includes usage information
-// filterPath is used to filter results to a specific subdirectory
-func (idx *Indexer) SearchWithUsage(ctx context.Context, query string, filterPath string, limit int) (*types.SearchResponse, error) {
+func (idx *Indexer) SearchWithUsage(ctx context.Context, query string, opts types.SearchOptions) (*types.SearchResponse, error) {
 	// Get current working directory for relative path computation
 	cwd, _ := filepath.Abs(".")
 
-	// Get base search results
-	results, err := idx.store.Search(ctx, query, cwd, filterPath, limit)
+	// Get base search results with filtering
+	results, err := idx.store.Search(ctx, query, cwd, opts)
 	if err != nil {
 		return nil, err
 	}

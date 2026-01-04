@@ -17,10 +17,28 @@ Search the indexed codebase and return relevant results. For each result, show:
 
 Present results in a clear, organized format with the most relevant matches first.
 
-## Path Filtering
+## Available Filters
 
-You can use the `path` parameter to filter results to a specific subdirectory:
-- `path: "src/components"` - Only search in src/components
-- `path: "lib"` - Only search in lib folder
+Use these parameters to narrow down search results:
 
-This is useful when the user asks to search in a specific part of the codebase.
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `path` | Filter to subdirectory | `"src/components"` |
+| `language` | Filter by language | `"go"`, `"python"`, `"typescript"` |
+| `type` | Filter by chunk type | `"function"`, `"class"`, `"method"` |
+| `code_only` | Exclude non-code files | `true` (excludes JSON, YAML, MD, etc.) |
+| `min_similarity` | Minimum match threshold | `0.5` (50% similarity) |
+| `limit` | Max results (default: 5) | `10` |
+
+## Examples
+
+```
+# Search only Go files
+query: "error handling", language: "go"
+
+# Search only functions in src folder
+query: "authentication", path: "src", type: "function"
+
+# High-confidence code results only
+query: "database", code_only: true, min_similarity: 0.6
+```

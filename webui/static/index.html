@@ -114,6 +114,68 @@
             border-color: #3b82f6;
         }
 
+        .filter-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-row select {
+            padding: 6px 10px;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .filter-row select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+            color: #888;
+            cursor: pointer;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+        }
+
+        .similarity-filter, .limit-filter {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #888;
+        }
+
+        .similarity-filter input, .limit-filter input {
+            width: 50px;
+            padding: 4px 6px;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .similarity-filter input:focus, .limit-filter input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
         .btn {
             padding: 8px 14px;
             border: none;
@@ -577,6 +639,41 @@
                         <button class="btn btn-blue" onclick="doSearch()">Search</button>
                     </div>
 
+                    <div class="filter-row">
+                        <select id="filter-language" title="Filter by language">
+                            <option value="">All Languages</option>
+                            <option value="go">Go</option>
+                            <option value="python">Python</option>
+                            <option value="javascript">JavaScript</option>
+                            <option value="typescript">TypeScript</option>
+                            <option value="java">Java</option>
+                            <option value="rust">Rust</option>
+                            <option value="c">C</option>
+                            <option value="cpp">C++</option>
+                            <option value="csharp">C#</option>
+                            <option value="ruby">Ruby</option>
+                            <option value="php">PHP</option>
+                        </select>
+                        <select id="filter-type" title="Filter by chunk type">
+                            <option value="">All Types</option>
+                            <option value="function">Functions</option>
+                            <option value="class">Classes</option>
+                            <option value="method">Methods</option>
+                        </select>
+                        <label class="checkbox-label" title="Exclude JSON, YAML, Markdown, etc.">
+                            <input type="checkbox" id="filter-code-only"> Code only
+                        </label>
+                        <div class="similarity-filter" title="Minimum similarity threshold">
+                            <span>Min:</span>
+                            <input type="number" id="filter-min-similarity" min="0" max="100" step="5" value="0" placeholder="0">
+                            <span>%</span>
+                        </div>
+                        <div class="limit-filter" title="Maximum results">
+                            <span>Limit:</span>
+                            <input type="number" id="filter-limit" min="1" max="50" value="10">
+                        </div>
+                    </div>
+
                     <div id="results-list" class="results-list">
                         <div class="empty-msg">Enter a search query to find code</div>
                     </div>
@@ -674,7 +771,9 @@
                 const badge = document.getElementById('ollama-badge');
                 badge.className = 'badge ' + (d.ollama_status === 'connected' ? 'green' : 'red');
                 if (d.version) {
-                    document.getElementById('version-badge').textContent = 'v' + d.version;
+                    // Version already includes 'v' prefix from build (e.g., 'v1.0.0')
+                    const ver = d.version.startsWith('v') ? d.version : 'v' + d.version;
+                    document.getElementById('version-badge').textContent = ver;
                 }
                 if (d.current_folder) {
                     document.getElementById('cwd-box').style.display = 'flex';
@@ -737,11 +836,28 @@
             list.innerHTML = '<div class="empty-msg"><span class="loading-spinner"></span>Searching...</div>';
             actions.style.display = 'none';
 
+            // Gather filter values
+            const language = document.getElementById('filter-language').value;
+            const chunkType = document.getElementById('filter-type').value;
+            const codeOnly = document.getElementById('filter-code-only').checked;
+            const minSimPercent = parseInt(document.getElementById('filter-min-similarity').value) || 0;
+            const minSimilarity = minSimPercent / 100; // Convert to 0-1 range
+            const limit = parseInt(document.getElementById('filter-limit').value) || 10;
+
+            const searchParams = {
+                query: q,
+                limit: Math.min(Math.max(limit, 1), 50)
+            };
+            if (language) searchParams.language = language;
+            if (chunkType) searchParams.type = chunkType;
+            if (codeOnly) searchParams.code_only = true;
+            if (minSimilarity > 0) searchParams.min_similarity = minSimilarity;
+
             try {
                 const r = await fetch('/api/search', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({query: q, limit: 20})
+                    body: JSON.stringify(searchParams)
                 });
                 const d = await r.json();
 

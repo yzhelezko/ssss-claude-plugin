@@ -180,6 +180,29 @@ type ScanResult struct {
 	ByLanguage   map[string]int `json:"by_language"` // File count by language
 }
 
+// SearchOptions contains optional filters for search
+type SearchOptions struct {
+	Path          string  // Filter to subdirectory path
+	Language      string  // Filter by programming language (e.g., "go", "python")
+	ChunkType     string  // Filter by chunk type: "function", "class", "method", "all"
+	CodeOnly      bool    // Exclude non-code files (JSON, YAML, MD, etc.)
+	MinSimilarity float32 // Minimum similarity threshold (0.0-1.0)
+	Limit         int     // Maximum results to return
+}
+
+// NonCodeLanguages lists languages that are typically config/docs, not code
+var NonCodeLanguages = map[string]bool{
+	"json":       true,
+	"yaml":       true,
+	"toml":       true,
+	"markdown":   true,
+	"xml":        true,
+	"html":       true,
+	"css":        true,
+	"dockerfile": true,
+	"plaintext":  true,
+}
+
 // ProgressEvent represents a progress update during indexing
 type ProgressEvent struct {
 	Type       string  `json:"type"`        // scanning, embedding, complete, error

@@ -171,7 +171,7 @@ update_mcp_config() {
     # Create Claude plugin directories and .mcp.json files
     local claude_dir="$HOME/.claude"
     local plugin_locations=(
-        "$claude_dir/plugins/cache/yzhelezko/ssss/1.0.0"
+        "$claude_dir/plugins/cache/yzhelezko/ssss/${LATEST_VERSION#v}"
         "$claude_dir/plugins/marketplaces/yzhelezko"
     )
 

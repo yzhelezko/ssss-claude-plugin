@@ -139,8 +139,9 @@ function Update-McpConfig {
 
     # Create Claude plugin directories and .mcp.json files
     $ClaudeDir = "$env:USERPROFILE\.claude"
+    $VersionNum = $script:InstalledVersion -replace '^v', ''  # Remove 'v' prefix
     $PluginLocations = @(
-        "$ClaudeDir\plugins\cache\yzhelezko\ssss\1.0.0",
+        "$ClaudeDir\plugins\cache\yzhelezko\ssss\$VersionNum",
         "$ClaudeDir\plugins\marketplaces\yzhelezko"
     )
 
@@ -213,6 +214,7 @@ function Write-NextSteps {
 # Main
 Write-Banner
 $Version = Get-LatestVersion
+$script:InstalledVersion = $Version  # Store for use in Update-McpConfig
 Install-Binary -Version $Version
 Set-Environment
 Update-McpConfig
