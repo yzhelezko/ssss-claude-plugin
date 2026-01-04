@@ -171,8 +171,8 @@ update_mcp_config() {
     # Find and update all .mcp.json files in Claude plugin directories
     local claude_dir="$HOME/.claude"
     local plugin_locations=(
-        "$claude_dir/plugins/cache/ssss-marketplace/ssss"
-        "$claude_dir/plugins/marketplaces/ssss-marketplace"
+        "$claude_dir/plugins/cache/yzhelezko/ssss"
+        "$claude_dir/plugins/marketplaces/yzhelezko"
     )
 
     for location in "${plugin_locations[@]}"; do

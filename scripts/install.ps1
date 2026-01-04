@@ -140,8 +140,8 @@ function Update-McpConfig {
     # Find and update all .mcp.json files in Claude plugin directories
     $ClaudeDir = "$env:USERPROFILE\.claude"
     $PluginLocations = @(
-        "$ClaudeDir\plugins\cache\ssss-marketplace\ssss",
-        "$ClaudeDir\plugins\marketplaces\ssss-marketplace"
+        "$ClaudeDir\plugins\cache\yzhelezko\ssss",
+        "$ClaudeDir\plugins\marketplaces\yzhelezko"
     )
 
     foreach ($Location in $PluginLocations) {
