@@ -91,18 +91,7 @@ function Set-Environment {
     $DataDir = "$InstallDir\data"
     New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
-    # Set environment variables for current user
-    $EnvVars = @{
-        "SSSS_BIN_PATH"       = "$BinDir\ssss.exe"
-        "MCP_DB_PATH"         = $DataDir
-    }
-
-    foreach ($Key in $EnvVars.Keys) {
-        [Environment]::SetEnvironmentVariable($Key, $EnvVars[$Key], "User")
-        Write-Info "Set $Key = $($EnvVars[$Key])"
-    }
-
-    # Add to PATH
+    # Add to PATH (still useful for CLI usage)
     $CurrentPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($CurrentPath -notlike "*$BinDir*") {
         $NewPath = "$BinDir;$CurrentPath"
@@ -112,10 +101,73 @@ function Set-Environment {
 
     # Also set for current session
     $env:Path = "$BinDir;$env:Path"
-    $env:SSSS_BIN_PATH = "$BinDir\ssss.exe"
-    $env:MCP_DB_PATH = $DataDir
 
     Write-Success "Environment configured"
+}
+
+function Update-McpConfig {
+    Write-Info "Updating MCP configuration with full paths..."
+
+    $DataDir = "$InstallDir\data"
+    $BinaryPath = "$BinDir\ssss.exe"
+
+    # Escape backslashes for JSON
+    $BinaryPathJson = $BinaryPath -replace '\\', '\\'
+    $DataDirJson = $DataDir -replace '\\', '\\'
+
+    $McpConfig = @"
+{
+  "ssss": {
+    "command": "$BinaryPathJson",
+    "args": [],
+    "env": {
+      "MCP_DB_PATH": "$DataDirJson",
+      "MCP_OLLAMA_URL": "http://localhost:11434",
+      "MCP_EMBEDDING_MODEL": "qwen3-embedding:8b",
+      "MCP_WEBUI_ENABLED": "true",
+      "MCP_WEBUI_PORT": "9420",
+      "MCP_AUTO_OPEN_UI": "true",
+      "MCP_AUTO_INDEX": "true",
+      "MCP_WATCH_ENABLED": "true",
+      "MCP_EMBEDDING_WORKERS": "4",
+      "MCP_MAX_FILE_SIZE": "1048576",
+      "MCP_DEBOUNCE_MS": "500"
+    }
+  }
+}
+"@
+
+    # Find and update all .mcp.json files in Claude plugin directories
+    $ClaudeDir = "$env:USERPROFILE\.claude"
+    $PluginLocations = @(
+        "$ClaudeDir\plugins\cache\ssss-marketplace\ssss",
+        "$ClaudeDir\plugins\marketplaces\ssss-marketplace"
+    )
+
+    foreach ($Location in $PluginLocations) {
+        if (Test-Path $Location) {
+            # Find all versions or the root
+            $Dirs = @($Location)
+            $VersionDirs = Get-ChildItem -Path $Location -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' }
+            if ($VersionDirs) {
+                $Dirs = $VersionDirs.FullName
+            }
+
+            foreach ($Dir in $Dirs) {
+                $McpFile = Join-Path $Dir ".mcp.json"
+                if (Test-Path $McpFile) {
+                    $McpConfig | Set-Content -Path $McpFile -Encoding UTF8
+                    Write-Info "Updated: $McpFile"
+                }
+                elseif (Test-Path $Dir) {
+                    $McpConfig | Set-Content -Path $McpFile -Encoding UTF8
+                    Write-Info "Created: $McpFile"
+                }
+            }
+        }
+    }
+
+    Write-Success "MCP configuration updated with full paths"
 }
 
 function Test-Ollama {
@@ -149,17 +201,13 @@ function Write-NextSteps {
     Write-Host "Installation complete!" -ForegroundColor Green
     Write-Host ""
     Write-Host "Next steps:"
-    Write-Host "  1. Restart your terminal to load the new PATH"
-    Write-Host "  2. Ensure Ollama is running: ollama serve"
-    Write-Host "  3. Pull the embedding model: ollama pull qwen3-embedding:8b"
-    Write-Host "  4. Install the Claude Code plugin: /plugin install github:yzhelezko/ssss-claude-plugin"
+    Write-Host "  1. Ensure Ollama is running: ollama serve"
+    Write-Host "  2. Pull the embedding model: ollama pull qwen3-embedding:8b"
+    Write-Host "  3. Install the Claude Code plugin: /plugin install github:yzhelezko/ssss-claude-plugin"
+    Write-Host "  4. Restart Claude Code to load the plugin"
     Write-Host ""
-    Write-Host "Configuration (via environment variables):"
-    Write-Host "  MCP_OLLAMA_URL         - Ollama API URL (default: http://localhost:11434)"
-    Write-Host "  MCP_EMBEDDING_MODEL    - Model for embeddings (default: qwen3-embedding:8b)"
-    Write-Host "  MCP_WEBUI_PORT         - Web UI port (default: 9420)"
-    Write-Host "  MCP_AUTO_OPEN_UI       - Auto-open browser (default: true)"
-    Write-Host "  MCP_AUTO_INDEX         - Auto-index current folder (default: true)"
+    Write-Host "Binary location: $BinDir\ssss.exe"
+    Write-Host "Data directory:  $InstallDir\data"
     Write-Host ""
     Write-Host "Documentation: https://github.com/yzhelezko/ssss-claude-plugin"
 }
@@ -169,5 +217,6 @@ Write-Banner
 $Version = Get-LatestVersion
 Install-Binary -Version $Version
 Set-Environment
+Update-McpConfig
 Test-Ollama
 Write-NextSteps

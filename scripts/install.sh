@@ -128,21 +128,10 @@ setup_env() {
     # Create data directory
     mkdir -p "$INSTALL_DIR/data"
 
-    # Create env file
+    # Create env file (still useful for CLI usage)
     cat > "$INSTALL_DIR/env.sh" << EOF
 # SSSS Environment Configuration
 # Source this file or add to your shell profile
-
-export SSSS_BIN_PATH="$BIN_DIR/ssss"
-export MCP_DB_PATH="$INSTALL_DIR/data"
-export MCP_OLLAMA_URL="\${MCP_OLLAMA_URL:-http://localhost:11434}"
-export MCP_EMBEDDING_MODEL="\${MCP_EMBEDDING_MODEL:-qwen3-embedding:8b}"
-export MCP_WEBUI_ENABLED="\${MCP_WEBUI_ENABLED:-true}"
-export MCP_WEBUI_PORT="\${MCP_WEBUI_PORT:-9420}"
-export MCP_AUTO_OPEN_UI="\${MCP_AUTO_OPEN_UI:-true}"
-export MCP_AUTO_INDEX="\${MCP_AUTO_INDEX:-true}"
-export MCP_WATCH_ENABLED="\${MCP_WATCH_ENABLED:-true}"
-export MCP_EMBEDDING_WORKERS="\${MCP_EMBEDDING_WORKERS:-4}"
 
 # Add to PATH if not already present
 if [[ ":\$PATH:" != *":$BIN_DIR:"* ]]; then
@@ -151,6 +140,59 @@ fi
 EOF
 
     log_success "Environment file created: $INSTALL_DIR/env.sh"
+}
+
+update_mcp_config() {
+    log_info "Updating MCP configuration with full paths..."
+
+    local binary_path="$BIN_DIR/ssss"
+    local data_dir="$INSTALL_DIR/data"
+
+    local mcp_config='{
+  "ssss": {
+    "command": "'"$binary_path"'",
+    "args": [],
+    "env": {
+      "MCP_DB_PATH": "'"$data_dir"'",
+      "MCP_OLLAMA_URL": "http://localhost:11434",
+      "MCP_EMBEDDING_MODEL": "qwen3-embedding:8b",
+      "MCP_WEBUI_ENABLED": "true",
+      "MCP_WEBUI_PORT": "9420",
+      "MCP_AUTO_OPEN_UI": "true",
+      "MCP_AUTO_INDEX": "true",
+      "MCP_WATCH_ENABLED": "true",
+      "MCP_EMBEDDING_WORKERS": "4",
+      "MCP_MAX_FILE_SIZE": "1048576",
+      "MCP_DEBOUNCE_MS": "500"
+    }
+  }
+}'
+
+    # Find and update all .mcp.json files in Claude plugin directories
+    local claude_dir="$HOME/.claude"
+    local plugin_locations=(
+        "$claude_dir/plugins/cache/ssss-marketplace/ssss"
+        "$claude_dir/plugins/marketplaces/ssss-marketplace"
+    )
+
+    for location in "${plugin_locations[@]}"; do
+        if [ -d "$location" ]; then
+            # Check for version directories
+            for dir in "$location" "$location"/*/; do
+                if [ -d "$dir" ]; then
+                    local mcp_file="$dir/.mcp.json"
+                    # Remove trailing slash from dir for cleaner output
+                    dir="${dir%/}"
+                    if [ -f "$mcp_file" ] || [ -d "$dir" ]; then
+                        echo "$mcp_config" > "$mcp_file"
+                        log_info "Updated: $mcp_file"
+                    fi
+                fi
+            done
+        fi
+    done
+
+    log_success "MCP configuration updated with full paths"
 }
 
 setup_shell() {
@@ -209,17 +251,13 @@ print_next_steps() {
     echo -e "${GREEN}Installation complete!${NC}"
     echo ""
     echo "Next steps:"
-    echo "  1. Restart your terminal or run: source $INSTALL_DIR/env.sh"
-    echo "  2. Ensure Ollama is running: ollama serve"
-    echo "  3. Pull the embedding model: ollama pull qwen3-embedding:8b"
-    echo "  4. Install the Claude Code plugin: /plugin install github:yzhelezko/ssss-claude-plugin"
+    echo "  1. Ensure Ollama is running: ollama serve"
+    echo "  2. Pull the embedding model: ollama pull qwen3-embedding:8b"
+    echo "  3. Install the Claude Code plugin: /plugin install github:yzhelezko/ssss-claude-plugin"
+    echo "  4. Restart Claude Code to load the plugin"
     echo ""
-    echo "Configuration (via environment variables):"
-    echo "  MCP_OLLAMA_URL         - Ollama API URL (default: http://localhost:11434)"
-    echo "  MCP_EMBEDDING_MODEL    - Model for embeddings (default: qwen3-embedding:8b)"
-    echo "  MCP_WEBUI_PORT         - Web UI port (default: 9420)"
-    echo "  MCP_AUTO_OPEN_UI       - Auto-open browser (default: true)"
-    echo "  MCP_AUTO_INDEX         - Auto-index current folder (default: true)"
+    echo "Binary location: $BIN_DIR/ssss"
+    echo "Data directory:  $INSTALL_DIR/data"
     echo ""
     echo "Documentation: https://github.com/yzhelezko/ssss-claude-plugin"
 }
@@ -231,6 +269,7 @@ main() {
     download_binary
     setup_env
     setup_shell
+    update_mcp_config
     check_ollama
     print_next_steps
 }
