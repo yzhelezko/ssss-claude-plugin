@@ -43,8 +43,95 @@ irm https://raw.githubusercontent.com/yzhelezko/ssss-claude-plugin/main/scripts/
 
 After installing the binary, install the plugin in Claude Code:
 ```
-/plugin install github:yzhelezko/ssss-claude-plugin
+/install github:yzhelezko/ssss-claude-plugin
 ```
+
+### Install as Standalone MCP Server
+
+You can also use SSSS as a standalone MCP server with Claude Desktop, Cursor, or any MCP-compatible client.
+
+#### Option 1: Claude Desktop
+
+Add to your Claude Desktop config file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+**Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "ssss": {
+      "command": "ssss",
+      "env": {
+        "MCP_OLLAMA_URL": "http://localhost:11434",
+        "MCP_EMBEDDING_MODEL": "qwen3-embedding:8b",
+        "MCP_AUTO_INDEX": "true",
+        "MCP_WATCH_ENABLED": "true",
+        "MCP_WEBUI_ENABLED": "true",
+        "MCP_AUTO_OPEN_UI": "false"
+      }
+    }
+  }
+}
+```
+
+> **Note**: If `ssss` is not in your PATH, use the full path to the binary:
+> - macOS/Linux: `"/usr/local/bin/ssss"` or `"~/.local/bin/ssss"`
+> - Windows: `"C:\\Users\\YourName\\.ssss-claude-plugin\\ssss.exe"`
+
+#### Option 2: Cursor IDE
+
+Add to your Cursor MCP settings (Settings → MCP Servers):
+
+```json
+{
+  "ssss": {
+    "command": "ssss",
+    "env": {
+      "MCP_EMBEDDING_MODEL": "qwen3-embedding:8b"
+    }
+  }
+}
+```
+
+#### Option 3: Manual/Stdio Mode
+
+Run directly for any MCP client using stdio transport:
+
+```bash
+# Basic usage (uses defaults)
+ssss
+
+# With custom settings
+MCP_EMBEDDING_MODEL=nomic-embed-text MCP_WEBUI_ENABLED=false ssss
+```
+
+The server communicates via stdin/stdout using the MCP protocol.
+
+#### Available MCP Tools
+
+When running as an MCP server, the following tool is exposed:
+
+| Tool | Parameters | Description |
+|------|------------|-------------|
+| `search` | `query` (required), `limit` (optional) | Semantic code search with usage analysis |
+
+**Example tool call:**
+```json
+{
+  "name": "search",
+  "arguments": {
+    "query": "authentication middleware",
+    "limit": 10
+  }
+}
+```
+
+**Response includes:**
+- `results`: Array of matching code snippets with file path, lines, content
+- `usage_graph`: Call relationships between found functions
+- Each result has `calls`, `called_by`, `is_unused`, `not_tested`, `is_exported` flags
 
 ## Usage
 
