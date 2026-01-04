@@ -106,7 +106,7 @@ function Set-Environment {
 }
 
 function Update-McpConfig {
-    Write-Info "Updating MCP configuration with full paths..."
+    Write-Info "Installing MCP server configuration..."
 
     $DataDir = "$InstallDir\data"
     $BinaryPath = "$BinDir\ssss.exe"
@@ -137,37 +137,35 @@ function Update-McpConfig {
 }
 "@
 
-    # Find and update all .mcp.json files in Claude plugin directories
+    # Create Claude plugin directories and .mcp.json files
     $ClaudeDir = "$env:USERPROFILE\.claude"
     $PluginLocations = @(
-        "$ClaudeDir\plugins\cache\yzhelezko\ssss",
+        "$ClaudeDir\plugins\cache\yzhelezko\ssss\1.0.0",
         "$ClaudeDir\plugins\marketplaces\yzhelezko"
     )
 
     foreach ($Location in $PluginLocations) {
-        if (Test-Path $Location) {
-            # Find all versions or the root
-            $Dirs = @($Location)
-            $VersionDirs = Get-ChildItem -Path $Location -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' }
-            if ($VersionDirs) {
-                $Dirs = $VersionDirs.FullName
-            }
+        # Create directory if it doesn't exist
+        if (-not (Test-Path $Location)) {
+            New-Item -ItemType Directory -Force -Path $Location | Out-Null
+            Write-Info "Created directory: $Location"
+        }
 
-            foreach ($Dir in $Dirs) {
-                $McpFile = Join-Path $Dir ".mcp.json"
-                if (Test-Path $McpFile) {
-                    $McpConfig | Set-Content -Path $McpFile -Encoding UTF8
-                    Write-Info "Updated: $McpFile"
-                }
-                elseif (Test-Path $Dir) {
-                    $McpConfig | Set-Content -Path $McpFile -Encoding UTF8
-                    Write-Info "Created: $McpFile"
-                }
-            }
+        # Always write .mcp.json
+        $McpFile = Join-Path $Location ".mcp.json"
+        $McpConfig | Set-Content -Path $McpFile -Encoding UTF8
+        Write-Info "Created: $McpFile"
+
+        # Also check for version subdirectories
+        $VersionDirs = Get-ChildItem -Path $Location -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d+\.\d+\.\d+$' }
+        foreach ($VersionDir in $VersionDirs) {
+            $McpFile = Join-Path $VersionDir.FullName ".mcp.json"
+            $McpConfig | Set-Content -Path $McpFile -Encoding UTF8
+            Write-Info "Created: $McpFile"
         }
     }
 
-    Write-Success "MCP configuration updated with full paths"
+    Write-Success "MCP server configuration installed"
 }
 
 function Test-Ollama {

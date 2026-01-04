@@ -143,7 +143,7 @@ EOF
 }
 
 update_mcp_config() {
-    log_info "Updating MCP configuration with full paths..."
+    log_info "Installing MCP server configuration..."
 
     local binary_path="$BIN_DIR/ssss"
     local data_dir="$INSTALL_DIR/data"
@@ -168,31 +168,39 @@ update_mcp_config() {
   }
 }'
 
-    # Find and update all .mcp.json files in Claude plugin directories
+    # Create Claude plugin directories and .mcp.json files
     local claude_dir="$HOME/.claude"
     local plugin_locations=(
-        "$claude_dir/plugins/cache/yzhelezko/ssss"
+        "$claude_dir/plugins/cache/yzhelezko/ssss/1.0.0"
         "$claude_dir/plugins/marketplaces/yzhelezko"
     )
 
     for location in "${plugin_locations[@]}"; do
-        if [ -d "$location" ]; then
-            # Check for version directories
-            for dir in "$location" "$location"/*/; do
-                if [ -d "$dir" ]; then
-                    local mcp_file="$dir/.mcp.json"
-                    # Remove trailing slash from dir for cleaner output
-                    dir="${dir%/}"
-                    if [ -f "$mcp_file" ] || [ -d "$dir" ]; then
-                        echo "$mcp_config" > "$mcp_file"
-                        log_info "Updated: $mcp_file"
-                    fi
-                fi
-            done
+        # Create directory if it doesn't exist
+        if [ ! -d "$location" ]; then
+            mkdir -p "$location"
+            log_info "Created directory: $location"
         fi
+
+        # Always write .mcp.json
+        local mcp_file="$location/.mcp.json"
+        echo "$mcp_config" > "$mcp_file"
+        log_info "Created: $mcp_file"
+
+        # Also check for version subdirectories
+        for version_dir in "$location"/*/; do
+            if [ -d "$version_dir" ]; then
+                version_dir="${version_dir%/}"
+                if [[ "$(basename "$version_dir")" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    local version_mcp_file="$version_dir/.mcp.json"
+                    echo "$mcp_config" > "$version_mcp_file"
+                    log_info "Created: $version_mcp_file"
+                fi
+            fi
+        done
     done
 
-    log_success "MCP configuration updated with full paths"
+    log_success "MCP server configuration installed"
 }
 
 setup_shell() {
