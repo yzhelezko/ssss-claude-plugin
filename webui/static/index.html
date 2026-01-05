@@ -152,6 +152,26 @@
             cursor: pointer;
         }
 
+        .path-filter {
+            display: flex;
+            align-items: center;
+        }
+
+        .path-filter input {
+            width: 120px;
+            padding: 6px 10px;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 12px;
+        }
+
+        .path-filter input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
         .similarity-filter, .limit-filter {
             display: flex;
             align-items: center;
@@ -640,6 +660,9 @@
                     </div>
 
                     <div class="filter-row">
+                        <div class="path-filter" title="Filter by path. Supports globs: *.go, src/**, folder/*">
+                            <input type="text" id="filter-path" placeholder="*.go, src/**">
+                        </div>
                         <select id="filter-language" title="Filter by language">
                             <option value="">All Languages</option>
                             <option value="go">Go</option>
@@ -759,6 +782,28 @@
                 watcherTimeout = setTimeout(() => {
                     watcherEl.classList.remove('active');
                 }, 3000);
+            } else if (ev.type === 'queued') {
+                // File change queued while indexing
+                watcherEl.classList.add('active');
+                watcherFile.textContent = ev.message;
+                clearTimeout(watcherTimeout);
+            } else if (ev.type === 'processing_queue') {
+                // Processing queued changes
+                box.classList.add('active');
+                bar.style.width = '0%';
+                bar.textContent = '';
+                txt.textContent = ev.message;
+                watcherEl.classList.add('active');
+                watcherFile.textContent = ev.message;
+            } else if (ev.type === 'queue_complete') {
+                // Queued changes processed
+                txt.textContent = ev.message;
+                toast(ev.message, 'success');
+                loadStatus();
+                watcherTimeout = setTimeout(() => {
+                    watcherEl.classList.remove('active');
+                    box.classList.remove('active');
+                }, 2000);
             }
         }
 
@@ -837,6 +882,7 @@
             actions.style.display = 'none';
 
             // Gather filter values
+            const pathFilter = document.getElementById('filter-path').value.trim();
             const language = document.getElementById('filter-language').value;
             const chunkType = document.getElementById('filter-type').value;
             const codeOnly = document.getElementById('filter-code-only').checked;
@@ -848,6 +894,7 @@
                 query: q,
                 limit: Math.min(Math.max(limit, 1), 50)
             };
+            if (pathFilter) searchParams.project = pathFilter;
             if (language) searchParams.language = language;
             if (chunkType) searchParams.type = chunkType;
             if (codeOnly) searchParams.code_only = true;

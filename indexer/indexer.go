@@ -26,6 +26,23 @@ func computeFileHash(content string) string {
 // ProgressCallback is called during indexing to report progress
 type ProgressCallback func(event types.ProgressEvent)
 
+// FileOpType represents the type of file operation
+type FileOpType int
+
+const (
+	FileOpUpdate FileOpType = iota
+	FileOpDelete
+	FileOpDeleteFolder
+)
+
+// FileOperation represents a queued file operation
+type FileOperation struct {
+	Type       FileOpType
+	FilePath   string // Absolute path to file
+	FolderPath string // Project folder path (for updates)
+	QueuedAt   time.Time
+}
+
 // Indexer orchestrates the indexing process
 type Indexer struct {
 	cfg            *config.Config
@@ -38,6 +55,11 @@ type Indexer struct {
 	indexingMu     sync.Mutex // Prevent concurrent indexing of same folder
 	progressCb     ProgressCallback
 	progressCbLock sync.RWMutex
+
+	// Queue for file operations when indexing is in progress
+	opQueue   map[string]FileOperation // keyed by absolute path for deduplication
+	opQueueMu sync.Mutex
+	isBusy    bool // true when indexing is in progress
 }
 
 // NewIndexer creates a new Indexer instance
@@ -49,6 +71,7 @@ func NewIndexer(cfg *config.Config, st *store.Store, hashStore *store.FileHashSt
 		callerIndex: store.NewCallerIndex(cfg),
 		embedder:    embedder,
 		chunker:     NewChunker(cfg.MaxChunkSize, cfg.ChunkOverlap),
+		opQueue:     make(map[string]FileOperation),
 	}
 }
 
@@ -155,6 +178,13 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 	// Prevent concurrent indexing
 	idx.indexingMu.Lock()
 	defer idx.indexingMu.Unlock()
+
+	// Mark as busy and process queue when done
+	idx.setBusy(true)
+	defer func() {
+		idx.setBusy(false)
+		idx.processQueue(ctx)
+	}()
 
 	idx.sendProgress(types.ProgressEvent{
 		Type:    "indexing_started",
@@ -624,6 +654,7 @@ func (idx *Indexer) GetStatus(ctx context.Context) (*types.StatusResult, error) 
 }
 
 // UpdateFile updates the index for a single file (called by watcher)
+// If indexing is in progress, the operation is queued for later
 func (idx *Indexer) UpdateFile(ctx context.Context, folderPath, filePath string) error {
 	absFilePath, err := filepath.Abs(filePath)
 	if err != nil {
@@ -635,6 +666,22 @@ func (idx *Indexer) UpdateFile(ctx context.Context, folderPath, filePath string)
 		return err
 	}
 
+	// Try to queue if busy
+	op := FileOperation{
+		Type:       FileOpUpdate,
+		FilePath:   absFilePath,
+		FolderPath: absFolderPath,
+		QueuedAt:   time.Now(),
+	}
+	if idx.queueOperation(op) {
+		return nil // Queued for later
+	}
+
+	return idx.doUpdateFile(ctx, absFolderPath, absFilePath)
+}
+
+// doUpdateFile performs the actual file update
+func (idx *Indexer) doUpdateFile(ctx context.Context, absFolderPath, absFilePath string) error {
 	relPath, _ := filepath.Rel(absFolderPath, absFilePath)
 	log.Printf("Watcher: Re-indexing file: %s", relPath)
 
@@ -650,6 +697,9 @@ func (idx *Indexer) UpdateFile(ctx context.Context, folderPath, filePath string)
 	if err := idx.store.DeleteFileChunks(ctx, absFilePath); err != nil {
 		log.Printf("Warning: failed to delete existing chunks: %v", err)
 	}
+
+	// Remove from caller index before re-adding
+	idx.callerIndex.RemoveFileCalls(absFilePath)
 
 	// Read and reindex file
 	content, err := ReadFileContent(absFilePath)
@@ -688,6 +738,10 @@ func (idx *Indexer) UpdateFile(ctx context.Context, folderPath, filePath string)
 			})
 			return err
 		}
+		// Update caller index with calls from each chunk
+		for _, chunk := range chunks {
+			idx.callerIndex.AddChunkCalls(chunk)
+		}
 		log.Printf("Watcher: Successfully re-indexed %s (%d chunks)", relPath, len(chunks))
 	}
 
@@ -709,12 +763,28 @@ func (idx *Indexer) UpdateFile(ctx context.Context, folderPath, filePath string)
 }
 
 // DeleteFile removes a file from the index (called by watcher)
+// If indexing is in progress, the operation is queued for later
 func (idx *Indexer) DeleteFile(ctx context.Context, filePath string) error {
 	absFilePath, err := filepath.Abs(filePath)
 	if err != nil {
 		return err
 	}
 
+	// Try to queue if busy
+	op := FileOperation{
+		Type:     FileOpDelete,
+		FilePath: absFilePath,
+		QueuedAt: time.Now(),
+	}
+	if idx.queueOperation(op) {
+		return nil // Queued for later
+	}
+
+	return idx.doDeleteFile(ctx, absFilePath)
+}
+
+// doDeleteFile performs the actual file deletion from index
+func (idx *Indexer) doDeleteFile(ctx context.Context, absFilePath string) error {
 	log.Printf("Watcher: Removing file from index: %s", absFilePath)
 
 	// Delete from vector store
@@ -722,6 +792,9 @@ func (idx *Indexer) DeleteFile(ctx context.Context, filePath string) error {
 		log.Printf("Watcher: Failed to delete chunks for %s: %v", absFilePath, err)
 		return err
 	}
+
+	// Remove from caller index
+	idx.callerIndex.RemoveFileCalls(absFilePath)
 
 	// Update hash store - find which folder this file belongs to
 	folders := idx.hashStore.ListIndexedFolders()
@@ -748,12 +821,28 @@ func (idx *Indexer) DeleteFile(ctx context.Context, filePath string) error {
 }
 
 // DeleteFolder removes all files in a folder from the index (called by watcher)
+// If indexing is in progress, the operation is queued for later
 func (idx *Indexer) DeleteFolder(ctx context.Context, folderPath string) error {
 	absFolderPath, err := filepath.Abs(folderPath)
 	if err != nil {
 		return err
 	}
 
+	// Try to queue if busy
+	op := FileOperation{
+		Type:     FileOpDeleteFolder,
+		FilePath: absFolderPath,
+		QueuedAt: time.Now(),
+	}
+	if idx.queueOperation(op) {
+		return nil // Queued for later
+	}
+
+	return idx.doDeleteFolder(ctx, absFolderPath)
+}
+
+// doDeleteFolder performs the actual folder deletion from index
+func (idx *Indexer) doDeleteFolder(ctx context.Context, absFolderPath string) error {
 	log.Printf("Watcher: Removing folder from index: %s", absFolderPath)
 
 	// Find which indexed folder contains this subfolder
@@ -770,6 +859,8 @@ func (idx *Indexer) DeleteFolder(ctx context.Context, folderPath string) error {
 					if err := idx.store.DeleteFileChunks(ctx, filePath); err != nil {
 						log.Printf("Warning: failed to delete chunks for %s: %v", filePath, err)
 					}
+					// Remove from caller index
+					idx.callerIndex.RemoveFileCalls(filePath)
 					// Remove from hash store
 					idx.hashStore.RemoveFileHash(folder, filePath)
 					deletedCount++
@@ -843,4 +934,125 @@ func (idx *Indexer) stopWatcher(projectPath string) {
 // Close shuts down the indexer
 func (idx *Indexer) Close() {
 	// Watcher cleanup is handled by WatcherManager.StopAll()
+}
+
+// setBusy sets the busy state of the indexer
+func (idx *Indexer) setBusy(busy bool) {
+	idx.opQueueMu.Lock()
+	defer idx.opQueueMu.Unlock()
+	idx.isBusy = busy
+}
+
+// IsBusy returns true if the indexer is currently processing
+func (idx *Indexer) IsBusy() bool {
+	idx.opQueueMu.Lock()
+	defer idx.opQueueMu.Unlock()
+	return idx.isBusy
+}
+
+// queueOperation adds a file operation to the queue
+// Returns true if queued, false if should process immediately
+func (idx *Indexer) queueOperation(op FileOperation) bool {
+	idx.opQueueMu.Lock()
+	defer idx.opQueueMu.Unlock()
+
+	if !idx.isBusy {
+		return false // Not busy, process immediately
+	}
+
+	// Queue the operation (deduplicates by path - latest operation wins)
+	idx.opQueue[op.FilePath] = op
+	queueSize := len(idx.opQueue)
+	log.Printf("Queued %s operation for: %s (queue size: %d)",
+		opTypeName(op.Type), op.FilePath, queueSize)
+
+	// Send progress event for UI
+	idx.sendProgress(types.ProgressEvent{
+		Type:    "queued",
+		Message: fmt.Sprintf("Queued: %s (%d pending)", filepath.Base(op.FilePath), queueSize),
+		File:    op.FilePath,
+		Total:   queueSize,
+	})
+
+	return true
+}
+
+// processQueue processes all queued file operations
+func (idx *Indexer) processQueue(ctx context.Context) {
+	idx.opQueueMu.Lock()
+	if len(idx.opQueue) == 0 {
+		idx.opQueueMu.Unlock()
+		return
+	}
+
+	// Copy and clear the queue
+	queue := idx.opQueue
+	idx.opQueue = make(map[string]FileOperation)
+	idx.opQueueMu.Unlock()
+
+	queueSize := len(queue)
+	log.Printf("Processing %d queued file operations...", queueSize)
+
+	idx.sendProgress(types.ProgressEvent{
+		Type:    "processing_queue",
+		Message: fmt.Sprintf("Processing %d queued changes...", queueSize),
+		Total:   queueSize,
+	})
+
+	// Process operations
+	for path, op := range queue {
+		select {
+		case <-ctx.Done():
+			log.Printf("Queue processing cancelled")
+			return
+		default:
+		}
+
+		var err error
+		switch op.Type {
+		case FileOpUpdate:
+			err = idx.doUpdateFile(ctx, op.FolderPath, path)
+		case FileOpDelete:
+			err = idx.doDeleteFile(ctx, path)
+		case FileOpDeleteFolder:
+			err = idx.doDeleteFolder(ctx, path)
+		}
+
+		if err != nil {
+			log.Printf("Failed to process queued operation for %s: %v", path, err)
+		}
+	}
+
+	// Save caller index after processing queue
+	if err := idx.callerIndex.Save(); err != nil {
+		log.Printf("Warning: failed to save caller index after queue processing: %v", err)
+	}
+
+	log.Printf("Finished processing queued operations")
+
+	idx.sendProgress(types.ProgressEvent{
+		Type:    "queue_complete",
+		Message: fmt.Sprintf("Processed %d queued changes", queueSize),
+		Total:   queueSize,
+	})
+}
+
+// QueueSize returns the number of pending operations
+func (idx *Indexer) QueueSize() int {
+	idx.opQueueMu.Lock()
+	defer idx.opQueueMu.Unlock()
+	return len(idx.opQueue)
+}
+
+func opTypeName(t FileOpType) string {
+	switch t {
+	case FileOpUpdate:
+		return "update"
+	case FileOpDelete:
+		return "delete"
+	case FileOpDeleteFolder:
+		return "delete-folder"
+	default:
+		return "unknown"
+	}
 }

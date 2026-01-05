@@ -147,14 +147,28 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, opts types
 
 	// Resolve filterPath to absolute if provided
 	var absFilterPath string
+	var pathPattern string // Glob pattern for file matching
+	isGlobPattern := false
 	if opts.Path != "" {
-		// Handle relative paths - resolve from cwd
-		if !filepath.IsAbs(opts.Path) {
-			absFilterPath = filepath.Join(cwd, opts.Path)
+		// Check if it's a glob pattern (contains * or ?)
+		if strings.ContainsAny(opts.Path, "*?") {
+			isGlobPattern = true
+			// Handle relative paths - resolve from cwd
+			if !filepath.IsAbs(opts.Path) {
+				pathPattern = filepath.Join(cwd, opts.Path)
+			} else {
+				pathPattern = opts.Path
+			}
+			pathPattern = filepath.Clean(pathPattern)
 		} else {
-			absFilterPath = opts.Path
+			// Simple prefix match
+			if !filepath.IsAbs(opts.Path) {
+				absFilterPath = filepath.Join(cwd, opts.Path)
+			} else {
+				absFilterPath = opts.Path
+			}
+			absFilterPath = filepath.Clean(absFilterPath)
 		}
-		absFilterPath = filepath.Clean(absFilterPath)
 	}
 
 	// Normalize language filter to lowercase
@@ -192,15 +206,23 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, opts types
 		}
 
 		// Apply path filter if specified
-		if absFilterPath != "" {
+		if absFilterPath != "" || isGlobPattern {
 			cleanAbsPath := filepath.Clean(absolutePath)
-			// Check if file is within the filter path
-			if !strings.HasPrefix(cleanAbsPath, absFilterPath) {
-				continue
-			}
-			// Ensure it's a proper directory prefix (not partial match)
-			if len(cleanAbsPath) > len(absFilterPath) && cleanAbsPath[len(absFilterPath)] != filepath.Separator {
-				continue
+			if isGlobPattern {
+				// Use glob pattern matching
+				matched, err := matchGlobPattern(pathPattern, cleanAbsPath)
+				if err != nil || !matched {
+					continue
+				}
+			} else if absFilterPath != "" {
+				// Check if file is within the filter path (prefix match)
+				if !strings.HasPrefix(cleanAbsPath, absFilterPath) {
+					continue
+				}
+				// Ensure it's a proper directory prefix (not partial match)
+				if len(cleanAbsPath) > len(absFilterPath) && cleanAbsPath[len(absFilterPath)] != filepath.Separator {
+					continue
+				}
 			}
 		}
 
@@ -213,7 +235,7 @@ func (s *Store) Search(ctx context.Context, query string, cwd string, opts types
 			}
 
 			// Skip files outside cwd (../ paths) only if no filter specified
-			if absFilterPath == "" && strings.HasPrefix(rel, "..") {
+			if absFilterPath == "" && !isGlobPattern && strings.HasPrefix(rel, "..") {
 				continue
 			}
 
@@ -521,4 +543,108 @@ func GenerateChunkID(absolutePath string, index int) string {
 	hash := sha256.Sum256([]byte(normalizedPath))
 	shortHash := hex.EncodeToString(hash[:16])
 	return fmt.Sprintf("%s:%d", shortHash, index)
+}
+
+// matchGlobPattern matches a file path against a glob pattern
+// Supports: * (any chars except separator), ** (any chars including separator), ? (single char)
+// Examples:
+//   - ./folder/*.go matches ./folder/main.go but not ./folder/sub/main.go
+//   - ./folder/**/*.go matches ./folder/sub/main.go
+//   - ./folder/foo* matches ./folder/foobar.go
+func matchGlobPattern(pattern, path string) (bool, error) {
+	// Normalize to forward slashes for consistent matching
+	pattern = filepath.ToSlash(pattern)
+	path = filepath.ToSlash(path)
+
+	// Handle ** (double star) - matches any number of directories
+	if strings.Contains(pattern, "**") {
+		// Split pattern into parts around **
+		parts := strings.Split(pattern, "**")
+		if len(parts) == 2 {
+			prefix := parts[0]
+			suffix := parts[1]
+
+			// Remove trailing/leading slashes from prefix/suffix
+			prefix = strings.TrimSuffix(prefix, "/")
+			suffix = strings.TrimPrefix(suffix, "/")
+
+			// Path must start with prefix
+			if prefix != "" && !strings.HasPrefix(path, prefix) {
+				return false, nil
+			}
+
+			// Get the remaining path after prefix
+			remaining := path
+			if prefix != "" {
+				remaining = strings.TrimPrefix(path, prefix)
+				remaining = strings.TrimPrefix(remaining, "/")
+			}
+
+			// If no suffix, any remaining path matches
+			if suffix == "" {
+				return true, nil
+			}
+
+			// Check if any suffix matches the end of remaining
+			// The suffix might contain wildcards too
+			if strings.ContainsAny(suffix, "*?") {
+				// Try matching suffix against each possible ending
+				parts := strings.Split(remaining, "/")
+				for i := range parts {
+					candidate := strings.Join(parts[i:], "/")
+					if matched, _ := filepath.Match(suffix, candidate); matched {
+						return true, nil
+					}
+					// Also try matching just the filename
+					if i == len(parts)-1 {
+						if matched, _ := filepath.Match(suffix, parts[i]); matched {
+							return true, nil
+						}
+					}
+				}
+				return false, nil
+			}
+
+			// Simple suffix match
+			return strings.HasSuffix(path, suffix), nil
+		}
+	}
+
+	// Handle simple patterns without **
+	// Try direct filepath.Match first
+	if matched, err := filepath.Match(pattern, path); err == nil && matched {
+		return true, nil
+	}
+
+	// If pattern ends with /*, it should match files in that directory
+	if strings.HasSuffix(pattern, "/*") {
+		dirPattern := strings.TrimSuffix(pattern, "/*")
+		pathDir := filepath.Dir(path)
+		pathDir = filepath.ToSlash(pathDir)
+
+		// Check if directory matches
+		if matched, _ := filepath.Match(dirPattern, pathDir); matched {
+			return true, nil
+		}
+		// Also check prefix match for directory
+		if strings.HasPrefix(pathDir, dirPattern) || pathDir == dirPattern {
+			return true, nil
+		}
+	}
+
+	// Check if pattern matches the filename (last component)
+	fileName := filepath.Base(path)
+	patternBase := filepath.Base(pattern)
+	if strings.ContainsAny(patternBase, "*?") {
+		if matched, _ := filepath.Match(patternBase, fileName); matched {
+			// Also verify the directory prefix matches
+			patternDir := filepath.Dir(pattern)
+			pathDir := filepath.Dir(path)
+			if strings.HasPrefix(filepath.ToSlash(pathDir), filepath.ToSlash(patternDir)) {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
