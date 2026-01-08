@@ -3,11 +3,12 @@ module mcp-semantic-search
 go 1.24.11
 
 require (
+	github.com/asg017/sqlite-vec-go-bindings v0.1.6
 	github.com/bep/debounce v1.2.1
 	github.com/creativeprojects/go-selfupdate v1.5.2
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/mark3labs/mcp-go v0.43.2
-	github.com/philippgille/chromem-go v0.7.0
+	github.com/ncruces/go-sqlite3 v0.21.3
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
 )
@@ -28,7 +29,9 @@ require (
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
+	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect

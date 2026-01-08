@@ -11,7 +11,6 @@ Search the indexed codebase and return relevant results. For each result, show:
 2. The code snippet
 3. Usage information (if available):
    - Whether it's exported/private
-   - Functions it calls
    - Functions that call it
    - Whether it has test coverage
 

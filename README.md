@@ -154,7 +154,7 @@ When running as an MCP server, the following tool is exposed:
 **Response includes:**
 - `results`: Array of matching code snippets with file path, lines, content
 - `usage_graph`: Call relationships between found functions
-- Each result has `calls`, `called_by`, `is_unused`, `not_tested`, `is_exported` flags
+- Each result has `called_by`, `referenced_by`, `is_unused`, `not_tested`, `is_exported` flags
 
 ## Usage
 
@@ -236,10 +236,10 @@ export MCP_EMBEDDING_WORKERS=8
 ### Usage Tracking
 
 Each search result includes:
-- **calls**: Functions this code calls
 - **called_by**: Functions that call this code (up to 3 levels)
+- **referenced_by**: Types/functions that use this type (for structs, classes, interfaces)
 - **is_exported**: Whether it's a public API
-- **is_unused**: No callers found (potential dead code)
+- **is_unused**: No callers or references found (potential dead code)
 - **not_tested**: Not called from any test file
 
 ## Supported Languages

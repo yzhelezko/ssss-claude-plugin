@@ -89,32 +89,24 @@ type SearchResult struct {
 
 // UsageInfo contains information about how a symbol is used
 type UsageInfo struct {
-	Calls      []CallInfo   `json:"calls,omitempty"`       // Functions this symbol calls
-	CalledBy   []CallerInfo `json:"called_by,omitempty"`   // Functions that call this symbol
-	References []string     `json:"references,omitempty"`  // Types/variables referenced
-	IsExported bool         `json:"is_exported"`           // Whether symbol is public
-	IsTest     bool         `json:"is_test"`               // Whether in test file
-	IsUnused   bool         `json:"is_unused"`             // Never called (and exported)
-	NotTested  bool         `json:"not_tested"`            // Not called from any test
+	CalledBy     []CallerInfo `json:"called_by,omitempty"`     // Functions that call this symbol
+	ReferencedBy []CallerInfo `json:"referenced_by,omitempty"` // Types/functions that reference this type
+	References   []string     `json:"references,omitempty"`    // Types/variables referenced
+	IsExported   bool         `json:"is_exported"`             // Whether symbol is public
+	IsTest       bool         `json:"is_test"`                 // Whether in test file
+	IsUnused     bool         `json:"is_unused"`               // Never called (and exported)
+	NotTested    bool         `json:"not_tested"`              // Not called from any test
 }
 
-// CallInfo represents a function/method being called
-type CallInfo struct {
-	Name       string `json:"name"`                  // Function/method name
-	FilePath   string `json:"file_path,omitempty"`   // File where callee is defined (if found)
-	Line       int    `json:"line,omitempty"`        // Line number (if found)
-	Language   string `json:"language,omitempty"`    // Programming language
-	IsExternal bool   `json:"is_external,omitempty"` // True if not found in index (external/stdlib)
-}
-
-// CallerInfo represents a caller of a function
+// CallerInfo represents a caller/referencer of a function or type
 type CallerInfo struct {
-	Name     string `json:"name"`                // Caller function name
+	Name     string `json:"name"`                // Caller function/type name
 	FilePath string `json:"file_path"`           // File where caller is defined
 	Line     int    `json:"line"`                // Line number
 	Language string `json:"language,omitempty"`  // Programming language
 	IsTest   bool   `json:"is_test"`             // Whether caller is a test
 	Parent   string `json:"parent,omitempty"`    // Parent class/struct (for methods)
+	Type     string `json:"type,omitempty"`      // Chunk type (function, class, method)
 }
 
 // SearchResponse is the full response for a search query
@@ -166,6 +158,8 @@ type StatusResult struct {
 	OllamaStatus   string `json:"ollama_status"`            // connected, disconnected
 	DBPath         string `json:"db_path"`
 	CurrentFolder  string `json:"current_folder,omitempty"` // Current working directory
+	CallerSymbols  int    `json:"caller_symbols,omitempty"` // Number of distinct called symbols
+	CallerEntries  int    `json:"caller_entries,omitempty"` // Total caller entries
 }
 
 // ScanResult represents the result of scanning a folder (before indexing)

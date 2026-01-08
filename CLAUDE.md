@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SSSS (Stupid Simple Semantic Search) is a Claude Code plugin and MCP server that provides AI-powered semantic code search using local Ollama embeddings. It parses code with Tree-sitter, generates vector embeddings via Ollama, and stores them in ChromemDB for fast semantic retrieval.
+SSSS (Stupid Simple Semantic Search) is a Claude Code plugin and MCP server that provides AI-powered semantic code search using local Ollama embeddings. It parses code with Tree-sitter, generates vector embeddings via Ollama, and stores them in SQLite with sqlite-vec for fast semantic retrieval.
 
 ## Build & Development Commands
 
@@ -38,9 +38,8 @@ go test -run TestName ./package/...
   - `embedder.go`: Ollama API client for generating embeddings
   - `indexer.go`: Orchestrates the indexing process with incremental support
 - **store/**: Vector database layer
-  - `store.go`: ChromemDB wrapper with a single global collection
+  - `store.go`: SQLite with sqlite-vec wrapper, includes caller/reference lookups
   - `metadata.go`: File hash storage for incremental indexing
-  - `caller_index.go`: Inverted index for O(1) caller lookups
 - **tools/**: MCP tool definitions - single `search` tool with usage analysis
 - **watcher/**: fsnotify-based file watcher for real-time re-indexing
 - **webui/**: HTTP server for visual interface at localhost:9420
@@ -49,8 +48,8 @@ go test -run TestName ./package/...
 
 ### Data Flow
 
-1. **Index**: Scanner → Parser (Tree-sitter) → Chunker → Embedder (Ollama) → Store (ChromemDB)
-2. **Search**: Query → Embedder → ChromemDB similarity search → CallerIndex enrichment → Results with usage graph
+1. **Index**: Scanner → Parser (Tree-sitter) → Chunker → Embedder (Ollama) → Store (SQLite-vec)
+2. **Search**: Query → Embedder → SQLite-vec similarity search → caller/reference lookups → Results with usage graph
 
 ### Plugin Structure
 
@@ -62,6 +61,6 @@ go test -run TestName ./package/...
 
 - All file paths in the store use absolute paths for global uniqueness
 - Search results return paths relative to current working directory
-- CallerIndex provides 3-level deep call hierarchy lookups
+- FindCallersDeep/FindReferencersDeep provide 3-level deep call and type reference lookups
 - Incremental indexing via content hashing (SHA256)
 - Version is injected at build time via ldflags

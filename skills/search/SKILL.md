@@ -13,6 +13,7 @@ Use the `search` MCP tool to find and analyze code. This is the PRIMARY tool for
 - Understanding code structure or dependencies
 - Locating where something is defined or used
 - Analyzing call relationships (what calls what)
+- Finding what uses a type/struct/class
 - Finding unused or untested code
 - Exploring unfamiliar codebases
 
@@ -20,6 +21,7 @@ Use the `search` MCP tool to find and analyze code. This is the PRIMARY tool for
 
 - Understands code **semantically** (meaning, not just text)
 - Returns **call graph** showing dependencies
+- Shows **type usage** (`referenced_by` for structs/classes)
 - Flags **unused** code (`is_unused: true`)
 - Flags **untested** code (`not_tested: true`)
 - Shows **exported** status (`is_exported: true`)
@@ -72,8 +74,8 @@ query: "utility function", limit: 20
 | `name` | Function/class name |
 | `content` | Code snippet |
 | `language` | Programming language |
-| `usage.calls` | Functions this code calls |
 | `usage.called_by` | Functions that call this code |
-| `is_unused` | Never called anywhere |
+| `usage.referenced_by` | Types/functions that use this type |
+| `is_unused` | Never called or referenced |
 | `not_tested` | No test coverage |
 | `is_exported` | Public/exported symbol |

@@ -10,73 +10,50 @@ import (
 
 	"mcp-semantic-search/config"
 	"mcp-semantic-search/types"
+
+	"github.com/ncruces/go-sqlite3"
 )
 
-// FileHashStore stores file hashes for incremental indexing
+// FileHashStore stores file hashes for incremental indexing using SQLite
 type FileHashStore struct {
-	cfg    *config.Config
-	hashes map[string]map[string]string // projectPath -> filePath -> hash
-	mu     sync.RWMutex
+	db *sqlite3.Conn
+	mu *sync.Mutex // Shared mutex with Store to prevent concurrent db access
 }
 
-// NewFileHashStore creates a new file hash store
-func NewFileHashStore(cfg *config.Config) *FileHashStore {
+// NewFileHashStore creates a new file hash store using the provided database connection
+func NewFileHashStore(db *sqlite3.Conn, mu *sync.Mutex) *FileHashStore {
 	return &FileHashStore{
-		cfg:    cfg,
-		hashes: make(map[string]map[string]string),
+		db: db,
+		mu: mu,
 	}
 }
 
-// LoadProjectHashes loads file hashes for a project
+// LoadProjectHashes is a no-op since data is already in SQLite
 func (f *FileHashStore) LoadProjectHashes(projectPath string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	hashFile := f.hashFilePath(projectPath)
-	data, err := os.ReadFile(hashFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			f.hashes[projectPath] = make(map[string]string)
-			return nil
-		}
-		return err
-	}
-
-	var hashes map[string]string
-	if err := json.Unmarshal(data, &hashes); err != nil {
-		return err
-	}
-
-	f.hashes[projectPath] = hashes
 	return nil
 }
 
-// SaveProjectHashes saves file hashes for a project
+// SaveProjectHashes is a no-op since data is already in SQLite
 func (f *FileHashStore) SaveProjectHashes(projectPath string) error {
-	f.mu.RLock()
-	hashes, ok := f.hashes[projectPath]
-	f.mu.RUnlock()
-
-	if !ok {
-		return nil
-	}
-
-	data, err := json.MarshalIndent(hashes, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	hashFile := f.hashFilePath(projectPath)
-	return os.WriteFile(hashFile, data, 0644)
+	return nil
 }
 
 // GetFileHash gets the stored hash for a file
 func (f *FileHashStore) GetFileHash(projectPath, filePath string) string {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	if hashes, ok := f.hashes[projectPath]; ok {
-		return hashes[filePath]
+	stmt, _, err := f.db.Prepare(`SELECT hash FROM file_hashes WHERE project_path = ? AND file_path = ?`)
+	if err != nil {
+		return ""
+	}
+	defer stmt.Close()
+
+	stmt.BindText(1, projectPath)
+	stmt.BindText(2, filePath)
+
+	if stmt.Step() {
+		return stmt.ColumnText(0)
 	}
 	return ""
 }
@@ -86,10 +63,16 @@ func (f *FileHashStore) SetFileHash(projectPath, filePath, hash string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if _, ok := f.hashes[projectPath]; !ok {
-		f.hashes[projectPath] = make(map[string]string)
+	stmt, _, err := f.db.Prepare(`INSERT OR REPLACE INTO file_hashes (project_path, file_path, hash) VALUES (?, ?, ?)`)
+	if err != nil {
+		return
 	}
-	f.hashes[projectPath][filePath] = hash
+	defer stmt.Close()
+
+	stmt.BindText(1, projectPath)
+	stmt.BindText(2, filePath)
+	stmt.BindText(3, hash)
+	stmt.Exec()
 }
 
 // RemoveFileHash removes the hash for a file
@@ -97,32 +80,46 @@ func (f *FileHashStore) RemoveFileHash(projectPath, filePath string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if hashes, ok := f.hashes[projectPath]; ok {
-		delete(hashes, filePath)
+	stmt, _, err := f.db.Prepare(`DELETE FROM file_hashes WHERE project_path = ? AND file_path = ?`)
+	if err != nil {
+		return
 	}
+	defer stmt.Close()
+
+	stmt.BindText(1, projectPath)
+	stmt.BindText(2, filePath)
+	stmt.Exec()
 }
 
 // DeleteProjectHashes deletes all hashes for a project
 func (f *FileHashStore) DeleteProjectHashes(projectPath string) error {
 	f.mu.Lock()
-	delete(f.hashes, projectPath)
-	f.mu.Unlock()
+	defer f.mu.Unlock()
 
-	hashFile := f.hashFilePath(projectPath)
-	if err := os.Remove(hashFile); err != nil && !os.IsNotExist(err) {
+	stmt, _, err := f.db.Prepare(`DELETE FROM file_hashes WHERE project_path = ?`)
+	if err != nil {
 		return err
 	}
-	return nil
+	defer stmt.Close()
+
+	stmt.BindText(1, projectPath)
+	return stmt.Exec()
 }
 
 // GetChangedFiles returns files that have changed (new, modified, or deleted)
 func (f *FileHashStore) GetChangedFiles(folderPath string, currentFiles map[string]string) (added, modified, deleted []string) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	storedHashes, ok := f.hashes[folderPath]
-	if !ok {
-		storedHashes = make(map[string]string)
+	// Get stored hashes from database
+	storedHashes := make(map[string]string)
+	stmt, _, err := f.db.Prepare(`SELECT file_path, hash FROM file_hashes WHERE project_path = ?`)
+	if err == nil {
+		stmt.BindText(1, folderPath)
+		for stmt.Step() {
+			storedHashes[stmt.ColumnText(0)] = stmt.ColumnText(1)
+		}
+		stmt.Close()
 	}
 
 	// Check for new and modified files
@@ -147,53 +144,40 @@ func (f *FileHashStore) GetChangedFiles(folderPath string, currentFiles map[stri
 
 // GetAllFilePaths returns all indexed file paths for a folder
 func (f *FileHashStore) GetAllFilePaths(folderPath string) []string {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	hashes, ok := f.hashes[folderPath]
-	if !ok {
+	stmt, _, err := f.db.Prepare(`SELECT file_path FROM file_hashes WHERE project_path = ?`)
+	if err != nil {
 		return nil
 	}
+	defer stmt.Close()
 
-	paths := make([]string, 0, len(hashes))
-	for filePath := range hashes {
-		paths = append(paths, filePath)
+	stmt.BindText(1, folderPath)
+
+	var paths []string
+	for stmt.Step() {
+		paths = append(paths, stmt.ColumnText(0))
 	}
 	return paths
 }
 
 // ListIndexedFolders returns all folder paths that have been indexed
 func (f *FileHashStore) ListIndexedFolders() []string {
-	// List all hash files in the database directory
-	pattern := filepath.Join(f.cfg.DBPath, "hashes_*.json")
-	files, err := filepath.Glob(pattern)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	stmt, _, err := f.db.Prepare(`SELECT DISTINCT project_path FROM file_hashes`)
 	if err != nil {
 		return nil
 	}
+	defer stmt.Close()
 
-	// Extract folder paths from cached hashes if loaded
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
-	folders := make([]string, 0, len(f.hashes))
-	for folderPath := range f.hashes {
-		folders = append(folders, folderPath)
+	var folders []string
+	for stmt.Step() {
+		folders = append(folders, stmt.ColumnText(0))
 	}
-
-	// If no hashes loaded, we just return based on files count
-	if len(folders) == 0 && len(files) > 0 {
-		// We'd need to load each file to get the folder path
-		// For now, return empty - watchers will be restored on next indexing
-		return nil
-	}
-
 	return folders
-}
-
-// hashFilePath returns the path to the hash file for a project
-func (f *FileHashStore) hashFilePath(projectPath string) string {
-	hash := GenerateProjectID(projectPath)
-	return filepath.Join(f.cfg.DBPath, "hashes_"+hash+".json")
 }
 
 // Metadata manages project metadata persistence

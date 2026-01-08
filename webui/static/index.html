@@ -537,6 +537,15 @@
             border-radius: 3px;
         }
 
+        .type-badge {
+            font-size: 9px;
+            padding: 1px 5px;
+            background: #2d2d1a;
+            color: #d4a54f;
+            border-radius: 3px;
+            margin-left: 4px;
+        }
+
         .usage-empty {
             color: #444;
             font-size: 11px;
@@ -684,7 +693,7 @@
                             <option value="method">Methods</option>
                         </select>
                         <label class="checkbox-label" title="Exclude JSON, YAML, Markdown, etc.">
-                            <input type="checkbox" id="filter-code-only"> Code only
+                            <input type="checkbox" id="filter-code-only" checked> Code only
                         </label>
                         <div class="similarity-filter" title="Minimum similarity threshold">
                             <span>Min:</span>
@@ -970,68 +979,89 @@
         function renderUsageSection(usage) {
             if (!usage) return '';
 
-            const hasData = usage.calls?.length || usage.called_by?.length ||
+            const hasData = usage.called_by?.length || usage.referenced_by?.length ||
                            usage.is_exported || usage.is_unused || usage.not_tested || usage.is_test;
             if (!hasData) return '';
 
             let flags = [];
-            if (usage.is_unused) flags.push('<span class="usage-flag flag-unused">⚠ Never Called</span>');
+            if (usage.is_unused) flags.push('<span class="usage-flag flag-unused">⚠ Never Used</span>');
             if (usage.not_tested) flags.push('<span class="usage-flag flag-untested">⚡ Not Tested</span>');
             if (usage.is_exported) flags.push('<span class="usage-flag flag-exported">✓ Exported</span>');
             if (usage.is_test) flags.push('<span class="usage-flag flag-test">🧪 Test Code</span>');
             if (!usage.is_exported && !usage.is_test) flags.push('<span class="usage-flag flag-private">Private</span>');
 
-            const calls = usage.calls || [];
             const calledBy = usage.called_by || [];
+            const referencedBy = usage.referenced_by || [];
+
+            // Build Called By section (for functions)
+            let calledBySection = '';
+            if (calledBy.length > 0) {
+                calledBySection = `
+                    <div class="usage-callers">
+                        <div class="usage-box-title">
+                            <span>📥 Called By</span>
+                            <span class="count">${calledBy.length}</span>
+                        </div>
+                        <div class="usage-list">
+                            ${calledBy.map(c => `
+                                <div class="usage-item${c.is_test ? ' test-caller' : ''}">
+                                    <div class="usage-item-main">
+                                        <span class="name">${c.parent ? esc(c.parent) + '.' : ''}${esc(c.name)}</span>
+                                        ${c.is_test ? '<span class="test-badge">🧪 test</span>' : ''}
+                                        ${c.type ? `<span class="type-badge">${esc(c.type)}</span>` : ''}
+                                    </div>
+                                    <div class="usage-item-detail">
+                                        <span class="file">${esc(c.file_path || '')}${c.line ? ':' + c.line : ''}</span>
+                                        ${c.language ? `<span class="lang">${esc(c.language)}</span>` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Build Referenced By section (for types/classes)
+            let referencedBySection = '';
+            if (referencedBy.length > 0) {
+                referencedBySection = `
+                    <div class="usage-callers">
+                        <div class="usage-box-title">
+                            <span>🔗 Used By</span>
+                            <span class="count">${referencedBy.length}</span>
+                        </div>
+                        <div class="usage-list">
+                            ${referencedBy.map(c => `
+                                <div class="usage-item${c.is_test ? ' test-caller' : ''}">
+                                    <div class="usage-item-main">
+                                        <span class="name">${c.parent ? esc(c.parent) + '.' : ''}${esc(c.name)}</span>
+                                        ${c.is_test ? '<span class="test-badge">🧪 test</span>' : ''}
+                                        ${c.type ? `<span class="type-badge">${esc(c.type)}</span>` : ''}
+                                    </div>
+                                    <div class="usage-item-detail">
+                                        <span class="file">${esc(c.file_path || '')}${c.line ? ':' + c.line : ''}</span>
+                                        ${c.language ? `<span class="lang">${esc(c.language)}</span>` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Show "No usage found" only if both are empty
+            let emptySection = '';
+            if (calledBy.length === 0 && referencedBy.length === 0) {
+                emptySection = '<div class="usage-empty">No callers or references found</div>';
+            }
 
             return `
                 <div class="usage-section">
                     <div class="usage-title">📊 Usage Analysis</div>
                     <div class="usage-flags">${flags.join('')}</div>
-                    <div class="usage-grid">
-                        <div class="usage-box">
-                            <div class="usage-box-title">
-                                <span>📤 Calls (outgoing)</span>
-                                <span class="count">${calls.length}</span>
-                            </div>
-                            <div class="usage-list">
-                                ${calls.length ? calls.map(c => `
-                                    <div class="usage-item${c.is_external ? ' external-call' : ''}">
-                                        <div class="usage-item-main">
-                                            <span class="name">${esc(c.name)}</span>
-                                            ${c.is_external ? '<span class="external-badge">external</span>' : ''}
-                                        </div>
-                                        ${c.file_path ? `
-                                            <div class="usage-item-detail">
-                                                <span class="file">${esc(c.file_path)}${c.line ? ':' + c.line : ''}</span>
-                                                ${c.language ? `<span class="lang">${esc(c.language)}</span>` : ''}
-                                            </div>
-                                        ` : ''}
-                                    </div>
-                                `).join('') : '<div class="usage-empty">No outgoing calls detected</div>'}
-                            </div>
-                        </div>
-                        <div class="usage-box">
-                            <div class="usage-box-title">
-                                <span>📥 Called By (incoming)</span>
-                                <span class="count">${calledBy.length}</span>
-                            </div>
-                            <div class="usage-list">
-                                ${calledBy.length ? calledBy.map(c => `
-                                    <div class="usage-item${c.is_test ? ' test-caller' : ''}">
-                                        <div class="usage-item-main">
-                                            <span class="name">${c.parent ? esc(c.parent) + '.' : ''}${esc(c.name)}</span>
-                                            ${c.is_test ? '<span class="test-badge">🧪 test</span>' : ''}
-                                        </div>
-                                        <div class="usage-item-detail">
-                                            <span class="file">${esc(c.file_path || '')}${c.line ? ':' + c.line : ''}</span>
-                                            ${c.language ? `<span class="lang">${esc(c.language)}</span>` : ''}
-                                        </div>
-                                    </div>
-                                `).join('') : '<div class="usage-empty">No callers found</div>'}
-                            </div>
-                        </div>
-                    </div>
+                    ${calledBySection}
+                    ${referencedBySection}
+                    ${emptySection}
                 </div>
             `;
         }

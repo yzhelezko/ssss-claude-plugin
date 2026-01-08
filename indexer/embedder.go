@@ -211,7 +211,7 @@ func (e *Embedder) GetModel() string {
 	return e.model
 }
 
-// EmbeddingFunc returns a function compatible with chromem-go and types.EmbeddingFunc
+// EmbeddingFunc returns a function compatible with types.EmbeddingFunc for the store
 func (e *Embedder) EmbeddingFunc() types.EmbeddingFunc {
 	return func(ctx context.Context, text string) ([]float32, error) {
 		return e.Embed(ctx, text)

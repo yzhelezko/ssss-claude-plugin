@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"mcp-semantic-search/indexer"
 	"mcp-semantic-search/types"
@@ -26,21 +27,24 @@ IMPORTANT: Use this tool PROACTIVELY whenever you need to:
 - Find code, functions, classes, or patterns in the codebase
 - Understand how code works or is structured
 - Locate implementations, definitions, or usages
-- Analyze dependencies or call relationships
+- Find who calls a function (callers analysis)
+- Find who uses a type/struct/class (type reference analysis)
 - Find unused or untested code
 
-DO NOT rely only on grep/glob - this tool understands code semantically and provides richer context including call graphs and usage analysis.
+DO NOT rely only on grep/glob - this tool understands code semantically and provides richer context including caller and type usage analysis.
 
 Returns code snippets matching the query semantically, with:
 - File path, line numbers, function/class name, code content
-- Usage map: what functions it calls, what calls it (3 levels deep)
-- Flags: is_unused (never called), not_tested (no test coverage), is_exported
+- Called By: functions that call this symbol (3 levels deep)
+- Used By: types/functions that reference this type (for structs, classes, interfaces)
+- Flags: is_unused (never called/used), not_tested (no test coverage), is_exported
 
 Use natural language queries like:
 - "function that handles authentication"
 - "error handling for API calls"
 - "unused functions"
-- "database connection"`),
+- "database connection"
+- "type UsageInfo" (to see what uses a type)`),
 		mcp.WithString("query",
 			mcp.Required(),
 			mcp.Description("Natural language search query"),
@@ -103,16 +107,96 @@ Use natural language queries like:
 			return mcp.NewToolResultText("No matching results found. Make sure you have indexed projects first."), nil
 		}
 
-		// Return full response with usage info and graph
-		return toolResultJSON(response)
+		// Return plain text response for AI consumption
+		return mcp.NewToolResultText(formatTextResponse(response)), nil
 	})
 }
 
-// toolResultJSON converts a value to JSON and returns as MCP tool result
-func toolResultJSON(v interface{}) (*mcp.CallToolResult, error) {
-	data, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("JSON encoding failed: %v", err)), nil
+// formatTextResponse formats search results as plain text for AI consumption
+func formatTextResponse(resp *types.SearchResponse) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("Found %d results:\n", resp.Count))
+
+	for i, r := range resp.Results {
+		// Header: name (type) file:lines [flags]
+		flags := formatFlags(r.Usage)
+		sb.WriteString(fmt.Sprintf("\n%d. %s (%s) %s:%s%s\n",
+			i+1, r.Name, r.ChunkType, r.FilePath, r.Lines, flags))
+
+		// Called by (for functions)
+		if r.Usage != nil && len(r.Usage.CalledBy) > 0 {
+			items := make([]string, 0, len(r.Usage.CalledBy))
+			for _, c := range r.Usage.CalledBy {
+				items = append(items, formatCallerCompact(c))
+			}
+			sb.WriteString(fmt.Sprintf("   Called by: %s\n", strings.Join(items, ", ")))
+		}
+
+		// Used by (for types)
+		if r.Usage != nil && len(r.Usage.ReferencedBy) > 0 {
+			items := make([]string, 0, len(r.Usage.ReferencedBy))
+			for _, c := range r.Usage.ReferencedBy {
+				items = append(items, formatCallerCompact(c))
+			}
+			sb.WriteString(fmt.Sprintf("   Used by: %s\n", strings.Join(items, ", ")))
+		}
+
+		// Code content (indented)
+		sb.WriteString("   ```\n")
+		for _, line := range strings.Split(r.Content, "\n") {
+			sb.WriteString("   " + line + "\n")
+		}
+		sb.WriteString("   ```\n")
 	}
-	return mcp.NewToolResultText(string(data)), nil
+
+	return sb.String()
 }
+
+// formatCallerCompact formats a caller/referencer as "Name (type, file:line)"
+func formatCallerCompact(c types.CallerInfo) string {
+	// Extract just filename from path
+	file := c.FilePath
+	if idx := strings.LastIndex(file, "/"); idx >= 0 {
+		file = file[idx+1:]
+	}
+	if idx := strings.LastIndex(file, "\\"); idx >= 0 {
+		file = file[idx+1:]
+	}
+
+	// Build compact format: Name (type, file:line)
+	chunkType := c.Type
+	if chunkType == "" {
+		chunkType = "func"
+	}
+	return fmt.Sprintf("%s (%s, %s:%d)", c.Name, chunkType, file, c.Line)
+}
+
+// formatFlags formats usage flags as a bracketed string
+func formatFlags(usage *types.UsageInfo) string {
+	if usage == nil {
+		return ""
+	}
+
+	var flags []string
+	if usage.IsExported {
+		flags = append(flags, "exported")
+	}
+	if usage.IsUnused {
+		flags = append(flags, "UNUSED")
+	}
+	if usage.NotTested {
+		flags = append(flags, "no-tests")
+	}
+	if usage.IsTest {
+		flags = append(flags, "test")
+	}
+
+	if len(flags) == 0 {
+		return ""
+	}
+	return " [" + strings.Join(flags, ", ") + "]"
+}
+
+// Suppress unused import warning
+var _ = json.Marshal

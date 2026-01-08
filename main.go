@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	"mcp-semantic-search/config"
 	"mcp-semantic-search/indexer"
@@ -41,11 +42,22 @@ func main() {
 	// Create embedder
 	embedder := indexer.NewEmbedder(cfg.OllamaURL, cfg.EmbeddingModel)
 
-	// Test Ollama connection
+	// Test Ollama connection, try to start if not running
 	ctx := context.Background()
 	if err := embedder.TestConnection(ctx); err != nil {
-		log.Printf("Warning: Ollama connection failed: %v", err)
-		log.Printf("Make sure Ollama is running with model '%s'", cfg.EmbeddingModel)
+		fmt.Fprintf(os.Stderr, "Ollama not running, attempting to start...\n")
+		if startErr := startOllama(); startErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to start Ollama: %v\n", startErr)
+			fmt.Fprintf(os.Stderr, "Please start Ollama manually: ollama serve\n")
+			os.Exit(1)
+		}
+		// Wait and retry connection
+		if err := embedder.TestConnection(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Ollama still not responding after start: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Make sure model '%s' is available: ollama pull %s\n", cfg.EmbeddingModel, cfg.EmbeddingModel)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "Ollama started successfully\n")
 	}
 
 	// Create store
@@ -54,8 +66,8 @@ func main() {
 		log.Fatalf("Failed to create vector store: %v", err)
 	}
 
-	// Create file hash store for incremental indexing
-	hashStore := store.NewFileHashStore(cfg)
+	// Create file hash store for incremental indexing (uses SQLite)
+	hashStore := vectorStore.NewFileHashStore()
 
 	// Create indexer
 	idx := indexer.NewIndexer(cfg, vectorStore, hashStore, embedder)
@@ -171,6 +183,34 @@ func main() {
 	if err := server.ServeStdio(mcpServer); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
+}
+
+// startOllama attempts to start Ollama in the background
+func startOllama() error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "windows":
+		// On Windows, try to start ollama serve in background
+		cmd = exec.Command("cmd", "/C", "start", "/B", "ollama", "serve")
+	default:
+		// On Unix, start in background
+		cmd = exec.Command("ollama", "serve")
+	}
+
+	// Start the process (don't wait for it)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start ollama: %w", err)
+	}
+
+	// Give Ollama a moment to start up
+	fmt.Fprintf(os.Stderr, "Waiting for Ollama to start...\n")
+	for i := 0; i < 10; i++ {
+		time.Sleep(500 * time.Millisecond)
+		// Check if it's responding now (done in caller)
+	}
+
+	return nil
 }
 
 // openBrowser opens the specified URL in the default browser

@@ -45,15 +45,14 @@ type FileOperation struct {
 
 // Indexer orchestrates the indexing process
 type Indexer struct {
-	cfg            *config.Config
-	store          *store.Store
-	hashStore      *store.FileHashStore
-	callerIndex    *store.CallerIndex // Inverted index for O(1) caller lookups
-	embedder       *Embedder
-	chunker        *Chunker
-	watcherMgr     *watcher.WatcherManager
-	indexingMu     sync.Mutex // Prevent concurrent indexing of same folder
-	progressCb     ProgressCallback
+	cfg        *config.Config
+	store      *store.Store
+	hashStore  *store.FileHashStore
+	embedder   *Embedder
+	chunker    *Chunker
+	watcherMgr *watcher.WatcherManager
+	indexingMu sync.Mutex // Prevent concurrent indexing of same folder
+	progressCb ProgressCallback
 	progressCbLock sync.RWMutex
 
 	// Queue for file operations when indexing is in progress
@@ -65,13 +64,12 @@ type Indexer struct {
 // NewIndexer creates a new Indexer instance
 func NewIndexer(cfg *config.Config, st *store.Store, hashStore *store.FileHashStore, embedder *Embedder) *Indexer {
 	return &Indexer{
-		cfg:         cfg,
-		store:       st,
-		hashStore:   hashStore,
-		callerIndex: store.NewCallerIndex(cfg),
-		embedder:    embedder,
-		chunker:     NewChunker(cfg.MaxChunkSize, cfg.ChunkOverlap),
-		opQueue:     make(map[string]FileOperation),
+		cfg:       cfg,
+		store:     st,
+		hashStore: hashStore,
+		embedder:  embedder,
+		chunker:   NewChunker(cfg.MaxChunkSize, cfg.ChunkOverlap),
+		opQueue:   make(map[string]FileOperation),
 	}
 }
 
@@ -254,7 +252,6 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 		if err := idx.store.DeleteFileChunks(ctx, absFilePath); err != nil {
 			log.Printf("Warning: failed to delete chunks for %s: %v", absFilePath, err)
 		}
-		idx.callerIndex.RemoveFileCalls(absFilePath) // Remove from caller index
 		idx.hashStore.RemoveFileHash(absPath, absFilePath)
 	}
 
@@ -262,7 +259,6 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 		if err := idx.store.DeleteFileChunks(ctx, absFilePath); err != nil {
 			log.Printf("Warning: failed to delete chunks for %s: %v", absFilePath, err)
 		}
-		idx.callerIndex.RemoveFileCalls(absFilePath) // Remove from caller index before re-adding
 	}
 
 	// Process new and modified files
@@ -307,10 +303,6 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 				log.Printf("Warning: failed to add chunks for %s: %v", absFilePath, err)
 				continue
 			}
-			// Update caller index with calls from each chunk
-			for _, chunk := range chunks {
-				idx.callerIndex.AddChunkCalls(chunk)
-			}
 			totalChunks += len(chunks)
 		}
 
@@ -322,11 +314,6 @@ func (idx *Indexer) IndexProject(ctx context.Context, folderPath string, enableW
 	// Save file hashes
 	if err := idx.hashStore.SaveProjectHashes(absPath); err != nil {
 		log.Printf("Warning: failed to save file hashes: %v", err)
-	}
-
-	// Save caller index
-	if err := idx.callerIndex.Save(); err != nil {
-		log.Printf("Warning: failed to save caller index: %v", err)
 	}
 
 	// Start file watcher if enabled
@@ -422,12 +409,6 @@ func (idx *Indexer) RemoveProject(ctx context.Context, folderPath string) error 
 		if err := idx.store.DeleteFileChunks(ctx, filePath); err != nil {
 			log.Printf("Warning: failed to delete chunks for %s: %v", filePath, err)
 		}
-		idx.callerIndex.RemoveFileCalls(filePath) // Remove from caller index
-	}
-
-	// Save caller index after removal
-	if err := idx.callerIndex.Save(); err != nil {
-		log.Printf("Warning: failed to save caller index: %v", err)
 	}
 
 	// Delete file hashes
@@ -479,45 +460,17 @@ func (idx *Indexer) SearchWithUsage(ctx context.Context, query string, opts type
 				return
 			}
 
-			// Parse calls and look up their locations in parallel
-			var callInfos []types.CallInfo
+			// Parse references
 			var references []string
 			if metadata != nil {
-				if callsStr := metadata["calls"]; callsStr != "" {
-					callNames := splitAndTrim(callsStr)
-					// Lookup call locations in parallel
-					callInfosChan := make(chan types.CallInfo, len(callNames))
-					var callWg sync.WaitGroup
-					for _, callName := range callNames {
-						callWg.Add(1)
-						go func(name string) {
-							defer callWg.Done()
-							callInfo, err := idx.store.FindSymbolLocation(ctx, name)
-							if err != nil {
-								callInfo = &types.CallInfo{Name: name, IsExternal: true}
-							}
-							// Convert absolute path to relative
-							if callInfo.FilePath != "" && cwd != "" {
-								if rel, err := filepath.Rel(cwd, callInfo.FilePath); err == nil {
-									callInfo.FilePath = "./" + filepath.ToSlash(rel)
-								}
-							}
-							callInfosChan <- *callInfo
-						}(callName)
-					}
-					callWg.Wait()
-					close(callInfosChan)
-					for ci := range callInfosChan {
-						callInfos = append(callInfos, ci)
-					}
-				}
 				if refsStr := metadata["references"]; refsStr != "" {
 					references = splitAndTrim(refsStr)
 				}
 			}
 
-			// Find callers (3 levels deep) using the fast caller index
-			callersByLevel := idx.callerIndex.FindCallersDeep(result.Name, 3, 10)
+			// Find callers (3 levels deep) using the chunks table directly
+			// Scope to current working directory to avoid cross-project matches
+			callersByLevel := idx.store.FindCallersDeep(ctx, result.Name, 3, 10, cwd)
 
 			// Flatten callers for the result
 			allCallers := make([]types.CallerInfo, 0)
@@ -542,19 +495,56 @@ func (idx *Indexer) SearchWithUsage(ctx context.Context, query string, opts type
 				}
 			}
 
+			// For types/classes, also find who references this type
+			// This shows "Used By" for types like structs, interfaces, classes
+			allReferencers := make([]types.CallerInfo, 0)
+			isTypeOrClass := result.ChunkType == "class" || result.ChunkType == "struct" ||
+				result.ChunkType == "interface" || result.ChunkType == "type"
+
+			if isTypeOrClass || len(allCallers) == 0 {
+				// Get type referencers (who uses this type in their code)
+				refsByLevel := idx.store.FindReferencersDeep(ctx, result.Name, 3, 10, cwd)
+				for level := 1; level <= 3; level++ {
+					if refs, ok := refsByLevel[level]; ok {
+						for _, ref := range refs {
+							// Convert absolute path to relative
+							relPath := ref.FilePath
+							if cwd != "" {
+								if rel, err := filepath.Rel(cwd, ref.FilePath); err == nil {
+									relPath = "./" + filepath.ToSlash(rel)
+								}
+							}
+							ref.FilePath = relPath
+							allReferencers = append(allReferencers, ref)
+
+							if ref.IsTest {
+								hasTestCaller = true
+							}
+						}
+					}
+				}
+			}
+
 			isExported := metadata != nil && metadata["is_exported"] == "true"
 			isTest := metadata != nil && metadata["is_test"] == "true"
-			isUnused := isExported && len(allCallers) == 0
+
+			// Check if this is an entry point (shouldn't be marked as unused)
+			isEntryPoint := isEntryPointFunction(result.Name, result.Language)
+
+			// For types: unused if no callers AND no referencers
+			// For functions: unused if no callers
+			totalUsage := len(allCallers) + len(allReferencers)
+			isUnused := isExported && totalUsage == 0 && !isEntryPoint && !isTest
 			notTested := isExported && !isTest && !hasTestCaller
 
 			result.Usage = &types.UsageInfo{
-				Calls:      callInfos,
-				CalledBy:   allCallers,
-				References: references,
-				IsExported: isExported,
-				IsTest:     isTest,
-				IsUnused:   isUnused,
-				NotTested:  notTested,
+				CalledBy:     allCallers,
+				ReferencedBy: allReferencers,
+				References:   references,
+				IsExported:   isExported,
+				IsTest:       isTest,
+				IsUnused:     isUnused,
+				NotTested:    notTested,
 			}
 
 			// Build graph nodes and edges (thread-safe)
@@ -573,28 +563,37 @@ func (idx *Indexer) SearchWithUsage(ctx context.Context, query string, opts type
 				})
 			}
 
-			// Add edges for calls
-			for _, call := range callInfos {
-				graphEdges = append(graphEdges, types.GraphEdge{
-					From:  result.Name,
-					To:    call.Name,
-					Count: 1,
-				})
-			}
-
-			// Add edges for callers
+			// Add edges for callers (incoming calls)
 			for _, caller := range allCallers {
 				if !seenNodes[caller.Name] {
 					seenNodes[caller.Name] = true
 					graphNodes = append(graphNodes, types.GraphNode{
 						ID:       caller.Name,
-						Type:     "function", // Assume function
+						Type:     caller.Type,
 						FilePath: caller.FilePath,
 						IsTest:   caller.IsTest,
 					})
 				}
 				graphEdges = append(graphEdges, types.GraphEdge{
 					From:  caller.Name,
+					To:    result.Name,
+					Count: 1,
+				})
+			}
+
+			// Add edges for type referencers (incoming references)
+			for _, ref := range allReferencers {
+				if !seenNodes[ref.Name] {
+					seenNodes[ref.Name] = true
+					graphNodes = append(graphNodes, types.GraphNode{
+						ID:       ref.Name,
+						Type:     ref.Type,
+						FilePath: ref.FilePath,
+						IsTest:   ref.IsTest,
+					})
+				}
+				graphEdges = append(graphEdges, types.GraphEdge{
+					From:  ref.Name,
 					To:    result.Name,
 					Count: 1,
 				})
@@ -698,9 +697,6 @@ func (idx *Indexer) doUpdateFile(ctx context.Context, absFolderPath, absFilePath
 		log.Printf("Warning: failed to delete existing chunks: %v", err)
 	}
 
-	// Remove from caller index before re-adding
-	idx.callerIndex.RemoveFileCalls(absFilePath)
-
 	// Read and reindex file
 	content, err := ReadFileContent(absFilePath)
 	if err != nil {
@@ -737,10 +733,6 @@ func (idx *Indexer) doUpdateFile(ctx context.Context, absFolderPath, absFilePath
 				Error:   err.Error(),
 			})
 			return err
-		}
-		// Update caller index with calls from each chunk
-		for _, chunk := range chunks {
-			idx.callerIndex.AddChunkCalls(chunk)
 		}
 		log.Printf("Watcher: Successfully re-indexed %s (%d chunks)", relPath, len(chunks))
 	}
@@ -792,9 +784,6 @@ func (idx *Indexer) doDeleteFile(ctx context.Context, absFilePath string) error 
 		log.Printf("Watcher: Failed to delete chunks for %s: %v", absFilePath, err)
 		return err
 	}
-
-	// Remove from caller index
-	idx.callerIndex.RemoveFileCalls(absFilePath)
 
 	// Update hash store - find which folder this file belongs to
 	folders := idx.hashStore.ListIndexedFolders()
@@ -859,8 +848,6 @@ func (idx *Indexer) doDeleteFolder(ctx context.Context, absFolderPath string) er
 					if err := idx.store.DeleteFileChunks(ctx, filePath); err != nil {
 						log.Printf("Warning: failed to delete chunks for %s: %v", filePath, err)
 					}
-					// Remove from caller index
-					idx.callerIndex.RemoveFileCalls(filePath)
 					// Remove from hash store
 					idx.hashStore.RemoveFileHash(folder, filePath)
 					deletedCount++
@@ -1023,11 +1010,6 @@ func (idx *Indexer) processQueue(ctx context.Context) {
 		}
 	}
 
-	// Save caller index after processing queue
-	if err := idx.callerIndex.Save(); err != nil {
-		log.Printf("Warning: failed to save caller index after queue processing: %v", err)
-	}
-
 	log.Printf("Finished processing queued operations")
 
 	idx.sendProgress(types.ProgressEvent{
@@ -1055,4 +1037,112 @@ func opTypeName(t FileOpType) string {
 	default:
 		return "unknown"
 	}
+}
+
+// isEntryPointFunction checks if a function is an entry point that shouldn't be marked as unused.
+// This is language-aware to handle different conventions across languages.
+func isEntryPointFunction(name, language string) bool {
+	// Universal entry points (work in most languages)
+	universalEntryPoints := map[string]bool{
+		"main":   true, // Go, C, C++, Rust, Java, Python, etc.
+		"Main":   true, // C#, some Java conventions
+		"init":   true, // Go, Python __init__ pattern
+		"setup":  true, // Test setup
+		"Setup":  true,
+		"run":    true, // Common runner pattern
+		"Run":    true,
+		"start":  true, // Server start patterns
+		"Start":  true,
+	}
+
+	if universalEntryPoints[name] {
+		return true
+	}
+
+	// Language-specific entry points
+	switch language {
+	case "go":
+		// Test functions, benchmarks, examples, fuzz tests
+		if strings.HasPrefix(name, "Test") ||
+			strings.HasPrefix(name, "Benchmark") ||
+			strings.HasPrefix(name, "Example") ||
+			strings.HasPrefix(name, "Fuzz") {
+			return true
+		}
+		// HTTP handler patterns
+		if strings.HasSuffix(name, "Handler") ||
+			strings.HasSuffix(name, "Middleware") {
+			return true
+		}
+
+	case "python":
+		// Dunder methods are special
+		if strings.HasPrefix(name, "__") && strings.HasSuffix(name, "__") {
+			return true
+		}
+		// Test patterns
+		if strings.HasPrefix(name, "test_") || strings.HasPrefix(name, "Test") {
+			return true
+		}
+
+	case "javascript", "typescript":
+		// Common lifecycle/hook patterns
+		lifecycleHooks := map[string]bool{
+			"componentDidMount": true, "componentWillUnmount": true,
+			"useEffect": true, "useState": true,
+			"beforeEach": true, "afterEach": true,
+			"beforeAll": true, "afterAll": true,
+			"describe": true, "it": true, "test": true,
+			"mounted": true, "created": true, "setup": true, // Vue
+			"getServerSideProps": true, "getStaticProps": true, // Next.js
+		}
+		if lifecycleHooks[name] {
+			return true
+		}
+
+	case "java":
+		// JUnit patterns
+		if strings.HasPrefix(name, "test") || strings.HasPrefix(name, "Test") {
+			return true
+		}
+		// Spring/framework patterns
+		if strings.HasSuffix(name, "Controller") ||
+			strings.HasSuffix(name, "Service") ||
+			strings.HasSuffix(name, "Repository") {
+			return true
+		}
+
+	case "ruby":
+		// RSpec/test patterns
+		if strings.HasPrefix(name, "test_") ||
+			name == "initialize" ||
+			name == "call" {
+			return true
+		}
+
+	case "rust":
+		// Test patterns
+		if strings.HasPrefix(name, "test_") {
+			return true
+		}
+
+	case "csharp":
+		// xUnit/NUnit patterns
+		if strings.HasPrefix(name, "Test") ||
+			strings.HasSuffix(name, "Test") ||
+			strings.HasSuffix(name, "Controller") ||
+			strings.HasSuffix(name, "Handler") {
+			return true
+		}
+
+	case "php":
+		// PHPUnit patterns
+		if strings.HasPrefix(name, "test") ||
+			name == "__construct" ||
+			name == "__invoke" {
+			return true
+		}
+	}
+
+	return false
 }

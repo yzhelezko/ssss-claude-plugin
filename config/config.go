@@ -10,7 +10,7 @@ import (
 // Config holds all configuration for the MCP semantic search server
 type Config struct {
 	// Database settings
-	DBPath string // Path to store chromem database and metadata
+	DBPath string // Path to store SQLite database and metadata
 
 	// Ollama settings
 	OllamaURL      string // Ollama API URL (e.g., http://localhost:11434)
@@ -52,13 +52,13 @@ func DefaultConfig() *Config {
 		EmbeddingModel:   "qwen3-embedding:8b",
 		WebUIEnabled:     true,
 		WebUIPort:        9420,
-		AutoOpenUI:       true,  // Auto-open browser by default
-		MaxPortRetry:     10,    // Try up to 10 ports if busy
+		AutoOpenUI:       true, // Auto-open browser by default
+		MaxPortRetry:     10,   // Try up to 10 ports if busy
 		AutoIndex:        true, // Auto-index current folder by default
 		WatchEnabled:     true,
 		DebounceMs:       500,
 		MaxFileSize:      1024 * 1024, // 1MB
-		MaxChunkSize:     500,         // 100 lines per chunk
+		MaxChunkSize:     500,         // 500 lines per chunk
 		ChunkOverlap:     20,          // 20 lines overlap
 		EmbeddingWorkers: 4,           // 4 parallel embedding workers
 
@@ -198,9 +198,9 @@ func expandPath(path string) string {
 	return path
 }
 
-// ChromemPath returns the path for chromem database
-func (c *Config) ChromemPath() string {
-	return filepath.Join(c.DBPath, "chromem")
+// SQLitePath returns the path for SQLite vector database
+func (c *Config) SQLitePath() string {
+	return filepath.Join(c.DBPath, "vectors.db")
 }
 
 // MetadataPath returns the path for metadata file
